@@ -1,0 +1,50 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+.DS_Store
+Thumbs.db
+
+.venv/
+venv/
+env/
+
+build/
+dist/
+upload-artifact/
+*.zip
+*.tar.gz
+*.7z
+
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local/runtime data
+*.log
+*.tmp
+*.aux
+*.out
+*.thm
+*.synctex.gz
+
+# Export outputs
+examples/*.html
+examples/*.tex
+examples/*.pdf
+examples/*.docx
+
+# Secrets and machine-local config
+.env
+.env.*
+config/*.local.*
+config/*secret*
+config/*token*
+config/*credential*
+config/*service-account*
+firebase-adminsdk*.json
+*firebase-adminsdk*.json
+
+# AI/editor caches
+.claude/
+.cursor/

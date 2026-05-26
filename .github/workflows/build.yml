@@ -1,0 +1,161 @@
+name: Build eMeX
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: emex-windows-x64
+            artifact_path: upload-artifact/emex-windows-x64
+          - os: macos-15-intel
+            artifact_name: emex-macos-intel
+            artifact_path: upload-artifact/emex-macos-intel
+          - os: macos-latest
+            artifact_name: emex-macos-arm64
+            artifact_path: upload-artifact/emex-macos-arm64
+          - os: ubuntu-latest
+            artifact_name: emex-linux-x64
+            artifact_path: upload-artifact/emex-linux-x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install Linux Qt dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libegl1 \
+            libgl1 \
+            libopengl0 \
+            libxcb-cursor0 \
+            libxcb-keysyms1 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-randr0 \
+            libxcb-xfixes0 \
+            libxcb-xinerama0 \
+            libxkbcommon-x11-0
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller pillow certifi
+
+      - name: Prepare app icons
+        run: python scripts/prepare_icons.py
+
+      - name: Build application
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pyinstaller build.spec --noconfirm --clean
+
+      - name: Package Windows release
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "${{ matrix.artifact_path }}" | Out-Null
+          Compress-Archive -Path "dist\eMeX" `
+                           -DestinationPath "${{ matrix.artifact_path }}/${{ matrix.artifact_name }}.zip" `
+                           -CompressionLevel Optimal -Force
+
+      - name: Package macOS release
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p "${{ matrix.artifact_path }}"
+          tar -czf "${{ matrix.artifact_path }}/${{ matrix.artifact_name }}.tar.gz" \
+              -C dist eMeX.app
+
+      - name: Package Linux release
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p "${{ matrix.artifact_path }}"
+          install -m 755 scripts/install-linux-desktop.sh dist/eMeX/install-linux-desktop.sh
+          tar -czf "${{ matrix.artifact_path }}/${{ matrix.artifact_name }}.tar.gz" \
+              -C dist eMeX
+
+      - name: Verify Windows archive structure
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zipPath = "${{ matrix.artifact_path }}/${{ matrix.artifact_name }}.zip"
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+          try {
+            $entries = $zip.Entries | ForEach-Object FullName
+            if (-not ($entries -contains "eMeX/eMeX.exe")) {
+              throw "Windows zip is missing eMeX/eMeX.exe"
+            }
+            if (-not ($entries | Where-Object { $_ -match '(^|/|\\)eMeX(/|\\)_internal(/|\\)docs(/|\\)assets(/|\\)icon_eMeX\.png$' })) {
+              throw "Windows zip is missing icon_eMeX.png"
+            }
+            if (-not ($entries | Where-Object { $_ -match '(^|/|\\)QtWebEngineProcess\.exe$' })) {
+              throw "Windows zip is missing QtWebEngineProcess.exe"
+            }
+            Write-Host "Windows zip OK ($($entries.Count) entries)"
+          } finally {
+            $zip.Dispose()
+          }
+
+      - name: Verify macOS / Linux archive structure
+        if: runner.os != 'Windows'
+        run: |
+          ARCHIVE="${{ matrix.artifact_path }}/${{ matrix.artifact_name }}.tar.gz"
+          if [[ "${{ matrix.artifact_name }}" == emex-macos-* ]]; then
+            tar -tzf "$ARCHIVE" | grep -q '^eMeX.app/Contents/MacOS/eMeX$' || {
+              echo "macOS archive is missing eMeX.app/Contents/MacOS/eMeX" >&2
+              exit 1
+            }
+            tar -tzf "$ARCHIVE" | grep -q 'QtWebEngineProcess' || {
+              echo "macOS archive is missing QtWebEngineProcess" >&2
+              exit 1
+            }
+          else
+            tar -tzf "$ARCHIVE" | grep -q '^eMeX/eMeX$' || {
+              echo "Linux archive is missing eMeX/eMeX" >&2
+              exit 1
+            }
+            tar -tzf "$ARCHIVE" | grep -q '^eMeX/_internal/docs/assets/icon_eMeX.png$' || {
+              echo "Linux archive is missing icon_eMeX.png" >&2
+              exit 1
+            }
+            tar -tzf "$ARCHIVE" | grep -q '^eMeX/install-linux-desktop.sh$' || {
+              echo "Linux archive is missing install-linux-desktop.sh" >&2
+              exit 1
+            }
+            tar -tzf "$ARCHIVE" | grep -q 'QtWebEngineProcess' || {
+              echo "Linux archive is missing QtWebEngineProcess" >&2
+              exit 1
+            }
+          fi
+          tar -tzf "$ARCHIVE" | head -5
+          echo "Archive size: $(du -h "$ARCHIVE" | cut -f1)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}/*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
