@@ -19,7 +19,7 @@ Link tải trực tiếp:
 - macOS Apple Silicon: <https://github.com/nhhai-math/eMeX/releases/latest/download/emex-macos-arm64.tar.gz>
 - Linux x64: <https://github.com/nhhai-math/eMeX/releases/latest/download/emex-linux-x64.tar.gz>
 
-Các link trực tiếp sẽ hoạt động sau khi GitHub Actions tạo Release đầu tiên từ tag dạng `v*`.
+Các link trực tiếp sẽ hoạt động sau khi GitHub Actions tạo Release đầu tiên.
 
 ## Chức năng chính
 
@@ -30,7 +30,7 @@ Các link trực tiếp sẽ hoạt động sau khi GitHub Actions tạo Release
 - Xuất tài liệu sang HTML, LaTeX, PDF và DOCX.
 - Hộp chat AI hỗ trợ Gemini, có API key trong cửa sổ AI, chọn model, gửi ảnh dán trực tiếp và chèn/thay nội dung phản hồi vào tài liệu.
 - Build tự động Windows, macOS Intel, macOS Apple Silicon và Linux bằng GitHub Actions.
-- Tạo GitHub Releases tự động sau khi build thành công khi push tag dạng `v*`.
+- Tạo GitHub Releases tự động sau khi build thành công, với tag dạng `vYYYY.MM.DD.xx`.
 
 ## Kiến trúc tổng quan
 
@@ -151,7 +151,7 @@ Workflow chính:
 Workflow chạy khi:
 
 - Push lên nhánh `main`.
-- Push tag dạng `v*`, ví dụ `v1.1.0`.
+- Push tag dạng `vYYYY.MM.DD.xx`, ví dụ `v2026.05.27.01`.
 - Chạy thủ công bằng `workflow_dispatch`.
 
 Các artifact được tạo:
@@ -163,27 +163,32 @@ Các artifact được tạo:
 
 ## GitHub Releases tự động
 
-Sau khi build cả 4 nền tảng thành công, job `release` sẽ tự tạo GitHub Release nếu:
+Sau khi build cả 4 nền tảng thành công, job `release` sẽ tự tạo GitHub Release cho mỗi lần workflow chạy.
 
-- Commit được push bằng tag dạng `v*`, hoặc
-- Workflow được chạy thủ công và có nhập `release_tag`.
+Quy tắc tag phiên bản:
 
-Ví dụ phát hành bản mới:
+- Dạng bắt buộc: `vYYYY.MM.DD.xx`.
+- `YYYY.MM.DD` là ngày theo múi giờ Việt Nam.
+- `xx` là số thứ tự trong ngày, bắt đầu từ `01`, sau đó tăng `02`, `03`, ...
+- Nếu push `main` hoặc chạy workflow thủ công không nhập tag, workflow tự sinh tag kế tiếp.
+- Nếu push tag hoặc nhập `release_tag` thủ công, tag phải đúng định dạng trên.
+
+Ví dụ tag hợp lệ:
 
 ```bash
-git tag v1.1.0
-git push origin v1.1.0
+git tag v2026.05.27.01
+git push origin v2026.05.27.01
 ```
 
-GitHub Actions sẽ build, kiểm tra artifact, sau đó tạo Release `eMeX v1.1.0` và đính kèm đủ 4 gói tải về.
+GitHub Actions sẽ build, kiểm tra artifact, sau đó tạo Release `eMeX v2026.05.27.01` và đính kèm đủ 4 gói tải về.
 
-Nếu chạy thủ công trong tab Actions, nhập:
+Nếu chạy thủ công trong tab Actions và muốn tự chỉ định tag, nhập:
 
 ```text
-release_tag = v1.1.0
+release_tag = v2026.05.27.01
 ```
 
-Workflow sẽ dùng tag đó để tạo Release sau khi build xong.
+Nếu để trống, workflow tự tạo tag kế tiếp theo ngày hiện tại.
 
 ## Đẩy mã nguồn lên GitHub
 
