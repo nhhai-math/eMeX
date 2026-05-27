@@ -14,12 +14,17 @@ if ROOT not in sys.path:
 
 # QtWebEngineWidgets phải được import TRƯỚC khi QApplication được tạo
 from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QElapsedTimer, QEventLoop, Qt, QTimer
 from PyQt6.QtGui import QColor, QFont, QIcon, QPalette
 from PyQt6.QtWidgets import QApplication
 
 from src.config import APP_ICON_FILE
+from src.i18n import t
 from src.main_window import EmexWindow
+from src.splash import SplashScreen
+
+
+MINIMUM_SPLASH_MS = 600
 
 
 def _force_light_theme(app: QApplication):
@@ -65,11 +70,18 @@ def _force_light_theme(app: QApplication):
     """)
 
 
-def _first_file_arg():
-    for arg in sys.argv[1:]:
-        if os.path.exists(arg):
-            return arg
-    return None
+def _file_args():
+    """Trả về tất cả tệp tồn tại trong argv (hỗ trợ mở nhiều tệp cùng lúc)."""
+    return [arg for arg in sys.argv[1:] if os.path.exists(arg)]
+
+
+def _hold_splash(elapsed: QElapsedTimer, minimum_ms: int = MINIMUM_SPLASH_MS):
+    remaining = minimum_ms - elapsed.elapsed()
+    if remaining <= 0:
+        return
+    loop = QEventLoop()
+    QTimer.singleShot(remaining, loop.quit)
+    loop.exec()
 
 
 def main():
@@ -77,18 +89,36 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("eMeX")
     app.setOrganizationName("eMeX")
+    app_icon = QIcon(APP_ICON_FILE) if os.path.exists(APP_ICON_FILE) else QIcon()
     if os.path.exists(APP_ICON_FILE):
-        app.setWindowIcon(QIcon(APP_ICON_FILE))
+        app.setWindowIcon(app_icon)
     app.setFont(QFont("Segoe UI" if sys.platform == "win32" else "Inter", 10))
 
     _force_light_theme(app)
 
-    win = EmexWindow()
-    win.show()
+    splash = SplashScreen(app_icon)
+    splash_elapsed = QElapsedTimer()
+    splash_elapsed.start()
+    splash.show()
+    splash.show_message(t("Đang khởi động..."))
 
-    file_arg = _first_file_arg()
-    if file_arg:
-        win._open_specific_file(file_arg)
+    try:
+        splash.show_message(t("Đang chuẩn bị giao diện..."))
+        win = EmexWindow()
+
+        file_args = _file_args()
+        if file_args:
+            splash.show_message(t("Đang mở tài liệu..."))
+            for path in file_args:
+                win._open_specific_file(path)
+
+        win.setWindowState(Qt.WindowState.WindowMaximized)
+        _hold_splash(splash_elapsed)
+        win.showMaximized()
+        splash.finish(win)
+    except BaseException:
+        splash.finish()
+        raise
 
     return app.exec()
 

@@ -1,4 +1,5 @@
 """Editor widget – Markdown only, có line numbers, autocomplete, auto-pair, smart indent."""
+import mimetypes
 import re
 
 from PyQt6.QtCore import Qt, QRect, QSize, QStringListModel
@@ -18,6 +19,8 @@ PAIR_MAP = {
     "$": "$",
     "`": "`",
 }
+
+IMAGE_FILE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}
 
 
 class LineNumberArea(QWidget):
@@ -245,12 +248,114 @@ class CodeEditor(QPlainTextEdit):
             line = self.textCursor().blockNumber() + 1
             self.main_window._sync_preview_to_editor_line(line)
 
+    # --------- Drag-drop: bỏ qua file URL để main window mở thành tab ---------
+    @staticmethod
+    def _mime_has_image_urls(source):
+        if not source.hasUrls():
+            return False
+        for url in source.urls():
+            path = url.toLocalFile()
+            mime = mimetypes.guess_type(path)[0] if path else ""
+            ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+            if path and ((mime and mime.startswith("image/")) or f".{ext}" in IMAGE_FILE_EXTENSIONS):
+                return True
+        return False
+
+    def canInsertFromMimeData(self, source):
+        if source.hasImage() or self._mime_has_image_urls(source):
+            return True
+        if source.hasUrls():
+            for url in source.urls():
+                if url.toLocalFile():
+                    return False
+        return super().canInsertFromMimeData(source)
+
+    def insertFromMimeData(self, source):
+        if (source.hasImage() or self._mime_has_image_urls(source)) and self.main_window:
+            handler = getattr(self.main_window, "_insert_pasted_image_from_mime", None)
+            if handler and handler(self, source):
+                return
+        super().insertFromMimeData(source)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls() and any(
+                u.toLocalFile() for u in event.mimeData().urls()):
+            event.ignore()
+            return
+        super().dragEnterEvent(event)
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls() and any(
+                u.toLocalFile() for u in event.mimeData().urls()):
+            event.ignore()
+            return
+        super().dropEvent(event)
+
     # --------- Key handling ---------
+    def _handle_app_shortcut(self, event):
+        mw = self.main_window
+        if not mw:
+            return False
+
+        key = event.key()
+        mods = event.modifiers()
+        ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
+        shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+        alt = bool(mods & Qt.KeyboardModifier.AltModifier)
+
+        def run(handler):
+            handler()
+            event.accept()
+            return True
+
+        if alt and key == Qt.Key.Key_F4:
+            return run(mw.close)
+
+        if not ctrl and not alt and key == Qt.Key.Key_F11:
+            return run(mw.act_zen.trigger)
+
+        if not ctrl or alt:
+            return False
+
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            return run(mw._compile_preview)
+        if key in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
+            return run(mw._prev_tab if shift or key == Qt.Key.Key_Backtab else mw._next_tab)
+        if shift and key == Qt.Key.Key_W:
+            return run(mw.close)
+        if key in (Qt.Key.Key_W, Qt.Key.Key_F4):
+            return run(mw._close_current_tab)
+        if key == Qt.Key.Key_N and not shift:
+            return run(mw._new_file)
+        if key == Qt.Key.Key_O and not shift:
+            return run(mw._open_file)
+        if key == Qt.Key.Key_S:
+            return run(mw._save_as_current if shift else mw._save_current)
+        if key == Qt.Key.Key_F and not shift:
+            return run(mw._show_find)
+        if key == Qt.Key.Key_H and not shift:
+            return run(mw._show_find)
+        if key == Qt.Key.Key_B and not shift:
+            return run(lambda: mw._wrap_selection("bold"))
+        if key == Qt.Key.Key_I and not shift:
+            return run(lambda: mw._wrap_selection("italic"))
+        if key == Qt.Key.Key_M:
+            return run(mw._block_math if shift else mw._inline_math)
+        if key == Qt.Key.Key_T and not shift:
+            return run(mw._insert_table)
+        if key == Qt.Key.Key_Slash and not shift:
+            return run(mw._toggle_comment_current)
+        if key == Qt.Key.Key_P and not shift:
+            return run(mw.act_toggle_preview.trigger)
+        if key == Qt.Key.Key_G and not shift:
+            return run(mw.trigger_ai_assistant)
+        if key == Qt.Key.Key_L and not shift:
+            return run(lambda: mw._line_prefix("- "))
+
+        return False
+
     def keyPressEvent(self, event):
-        # Ctrl+G -> AI assistant
-        if (event.modifiers() & Qt.KeyboardModifier.ControlModifier) and event.key() == Qt.Key.Key_G:
-            if self.main_window and hasattr(self.main_window, "trigger_ai_assistant"):
-                self.main_window.trigger_ai_assistant()
+        if self._handle_app_shortcut(event):
             return
 
         # Tab -> indent / completer

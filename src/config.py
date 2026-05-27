@@ -17,8 +17,10 @@ AI_CONFIG_FILE = os.path.join(CONFIG_DIR, "ai_config.json")
 EDITOR_CONFIG_FILE = os.path.join(CONFIG_DIR, "editor_config.json")
 RECENT_FILES_FILE = os.path.join(CONFIG_DIR, "recent_files.json")
 SNIPPETS_FILE = os.path.join(CONFIG_DIR, "user_snippets.json")
+PAGE_TEMPLATES_FILE = os.path.join(CONFIG_DIR, "page_templates.json")
 
 DEFAULT_EDITOR_CONFIG = {
+    "language": "vi",
     "font_family": "Consolas" if sys.platform == "win32" else "Menlo",
     "font_size": 13,
     "tab_spaces": 2,
@@ -28,6 +30,19 @@ DEFAULT_EDITOR_CONFIG = {
     "gemini_model": "gemini-2.5-flash",
     "gemini_models_cache": [],  # danh sách model đã tải về
     "auto_save": False,
+    # UI size settings
+    "toolbar_icon_size": 22,        # kích thước icon trên toolbar (px)
+    "toolbar_btn_padding": 6,       # padding nút toolbar (px)
+    "symbol_btn_size": 38,          # kích thước nút bảng ký hiệu (px)
+    "symbol_btn_font_size": 13,     # cỡ chữ nút bảng ký hiệu (pt)
+    "ui_preview_visible": True,
+    "ui_palette_visible": True,
+    "ui_ai_state": "closed",        # closed | compact
+    "ui_main_splitter_sizes": [],
+    "ui_left_splitter_sizes": [],
+    "ui_window_geometry": [],
+    "ui_window_maximized": False,
+    "ui_zen_enabled": False,
 }
 
 # --------- Markdown snippets ---------
@@ -98,20 +113,103 @@ $$
 | A     | 1     |
 | B     | 2     |
 
-## Code
+## Mã nguồn
 
 ```python
 def hello():
-    print("Hello from eMeX")
+    print("Xin chào từ eMeX")
 ```
 
 ## Danh sách
 
 - Mục một
 - Mục hai
-- [ ] Task chưa xong
-- [x] Task đã xong
+- [ ] Việc chưa xong
+- [x] Việc đã xong
 """
+
+MARKDOWN_PAGE_TEMPLATES = [
+    {
+        "name": "Tài liệu cơ bản",
+        "filename": "Tai-lieu-co-ban.md",
+        "content": MARKDOWN_DEFAULT_DOC,
+    },
+    {
+        "name": "Ghi chú nhanh",
+        "filename": "Ghi-chu-nhanh.md",
+        "content": """# Ghi chú nhanh
+
+## Ý chính
+
+-
+
+## Việc cần làm
+
+- [ ]
+
+## Ghi thêm
+
+""",
+    },
+    {
+        "name": "Bài học",
+        "filename": "Bai-hoc.md",
+        "content": """# Tên bài học
+
+## Mục tiêu
+
+-
+
+## Nội dung
+
+### 1. Khởi động
+
+### 2. Kiến thức chính
+
+### 3. Luyện tập
+
+## Ghi chú giáo viên
+
+""",
+    },
+    {
+        "name": "Bài tập toán",
+        "filename": "Bai-tap-toan.md",
+        "content": """# Bài tập toán
+
+## Đề bài
+
+
+## Lời giải
+
+$$
+
+$$
+
+## Kết luận
+
+""",
+    },
+    {
+        "name": "Báo cáo ngắn",
+        "filename": "Bao-cao-ngan.md",
+        "content": """# Báo cáo ngắn
+
+## Tóm tắt
+
+
+## Nội dung chính
+
+
+## Kết quả
+
+
+## Việc tiếp theo
+
+- [ ]
+""",
+    },
+]
 
 # --------- Bảng ký hiệu nhanh cho Symbol Palette ---------
 # Khi chèn vào Markdown, các ký hiệu \alpha, \frac... chỉ có nghĩa khi nằm trong $...$.
@@ -231,6 +329,27 @@ def push_recent(path):
     recent = recent[:15]
     save_json(RECENT_FILES_FILE, recent)
     return recent
+
+
+def load_user_page_templates():
+    data = load_json(PAGE_TEMPLATES_FILE, [])
+    if not isinstance(data, list):
+        return []
+    templates = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        content = item.get("content", "")
+        if not name or not isinstance(content, str):
+            continue
+        filename = str(item.get("filename", "")).strip() or f"{name}.md"
+        templates.append({"name": name, "filename": filename, "content": content})
+    return templates
+
+
+def save_user_page_templates(templates):
+    return save_json(PAGE_TEMPLATES_FILE, templates)
 
 
 def gemini_model_sort_key(name):

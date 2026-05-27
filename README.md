@@ -1,106 +1,172 @@
 # eMeX
 
-eMeX là trình soạn thảo Markdown cho tài liệu toán học, tập trung vào trải nghiệm viết nhanh, xem trước công thức/hình vẽ, xuất bản tài liệu và hỗ trợ AI trong quá trình soạn thảo.
+eMeX là trình soạn thảo Markdown cho tài liệu toán học, bài giảng và ghi chú kỹ thuật. Ứng dụng tập trung vào ba việc: viết Markdown nhanh, xem trước công thức/hình vẽ chính xác, và xuất bản tài liệu ra các định dạng phổ biến.
 
-Ứng dụng hiện được phát triển bằng Python + PyQt6, đóng gói đa nền tảng bằng PyInstaller và đồng bộ lên GitHub tại:
+Mã nguồn và bản phát hành:
 
-<https://github.com/nhhai-math/eMeX.git>
+- Repository: <https://github.com/nhhai-math/eMeX.git>
+- Releases: <https://github.com/nhhai-math/eMeX/releases>
+- Latest release: <https://github.com/nhhai-math/eMeX/releases/latest>
 
 ## Tải phần mềm
 
-Người dùng cuối có thể tải bản phát hành mới nhất tại:
+Người dùng cuối tải bản mới nhất tại:
 
 <https://github.com/nhhai-math/eMeX/releases/latest>
 
-Link tải trực tiếp:
+Link tải trực tiếp theo nền tảng:
 
 - Windows x64: <https://github.com/nhhai-math/eMeX/releases/latest/download/emex-windows-x64.zip>
 - macOS Intel: <https://github.com/nhhai-math/eMeX/releases/latest/download/emex-macos-intel.tar.gz>
 - macOS Apple Silicon: <https://github.com/nhhai-math/eMeX/releases/latest/download/emex-macos-arm64.tar.gz>
 - Linux x64: <https://github.com/nhhai-math/eMeX/releases/latest/download/emex-linux-x64.tar.gz>
 
-Các link trực tiếp sẽ hoạt động sau khi GitHub Actions tạo Release đầu tiên.
+## Tính năng hiện có
 
-## Chức năng chính
-
-- Soạn thảo Markdown với syntax highlight, line number, snippet và bảng ký hiệu toán.
-- Preview Markdown theo thời gian thực bằng MathJax, hỗ trợ TikZ block.
-- Chế độ `Compile` để render lại toàn bộ tài liệu khi cần bản xem trước đầy đủ.
+- Soạn thảo nhiều tab Markdown, khôi phục phiên làm việc và mở nhiều tệp từ dòng lệnh hoặc kéo-thả.
+- Thanh công cụ icon-only cho các thao tác thường dùng: mở/lưu, định dạng Markdown, chèn liên kết/ảnh/bảng/code, tìm-thay, compile, hiển thị, cài đặt.
+- Mẫu trang Markdown có sẵn và mẫu người dùng lưu từ trang hiện tại.
+- Bảng ký hiệu và Markdown nhanh ở cột trái, có thể chỉnh kích thước nút trong Cài đặt.
+- Syntax highlight, line number, snippet autocomplete, auto-pair và comment HTML bằng `Ctrl+/`.
+- Preview Markdown bằng `QWebEngineView`, MathJax và TikZ; chế độ tự động chỉ render block đang soạn, `Ctrl+Enter` compile toàn tài liệu.
 - Đồng bộ vị trí editor/preview bằng double-click hai chiều.
-- Xuất tài liệu sang HTML, LaTeX, PDF và DOCX.
-- Hộp chat AI hỗ trợ Gemini, có API key trong cửa sổ AI, chọn model, gửi ảnh dán trực tiếp và chèn/thay nội dung phản hồi vào tài liệu.
-- Build tự động Windows, macOS Intel, macOS Apple Silicon và Linux bằng GitHub Actions.
-- Tạo GitHub Releases tự động sau khi build thành công, với tag dạng `vYYYY.MM.DD.xx`.
+- Xuất HTML, LaTeX, PDF và DOCX. PDF được in từ preview đã render; DOCX hỗ trợ chuyển một số công thức LaTeX sang OMML.
+- Trợ lý eMeX dùng Gemini, giao diện chat bubble, render Markdown, dán ảnh hoặc văn bản dài trực tiếp vào chat.
+- Cấu hình Gemini API key, model, ngôn ngữ, font, autosave và kích thước UI trong Cài đặt.
+- Hỗ trợ giao diện tiếng Việt/tiếng Anh qua `src/i18n.py`.
+- Splash screen khi khởi động, toast notification không-modal và worker nền cho tác vụ nặng.
+- Tự kiểm tra cập nhật từ GitHub Releases, tải đúng gói theo hệ điều hành và hỗ trợ cập nhật bản đóng gói.
+- GitHub Actions build đa nền tảng và tạo Release tự động sau khi build thành công.
 
-## Kiến trúc tổng quan
+## Kiến trúc phần mềm
 
 ```mermaid
 flowchart LR
-    A[eMeX.py] --> B[src.main_window.EmexWindow]
-    B --> C[src.editor.CodeEditor]
-    B --> D[src.preview.PreviewPane]
-    B --> E[src.symbol_palette.SymbolPalette]
-    B --> F[src.ai_assistant.AIChatWidget]
-    B --> G[src.exporters]
-    B --> H[src.dialogs]
-    C --> I[src.highlighter.MarkdownHighlighter]
-    D --> J[QWebEngineView + MathJax/TikZ render]
-    F --> K[Google Gemini API]
-    G --> L[HTML / LaTeX / PDF / DOCX]
-    H --> M[src.config]
-    B --> M
+    A[eMeX.py] --> B[SplashScreen]
+    A --> C[EmexWindow]
+    C --> D[CodeEditor]
+    C --> E[PreviewPane]
+    C --> F[SymbolPalette]
+    C --> G[AIChatWidget]
+    C --> H[Settings/About Dialogs]
+    C --> I[Exporters]
+    C --> J[Updater]
+    C --> K[Workers + Toast]
+    D --> L[MarkdownHighlighter]
+    E --> M[QWebEngineView + MathJax/TikZ]
+    G --> N[Google Gemini API]
+    I --> O[HTML / LaTeX / PDF / DOCX]
+    J --> P[GitHub Releases API]
+    H --> Q[Config + i18n]
+    C --> Q
 ```
 
-Luồng chính:
+Luồng khởi động:
 
-1. `eMeX.py` khởi tạo `QApplication`, thiết lập theme sáng, icon ứng dụng và mở `EmexWindow`.
-2. `src/main_window.py` là shell chính: menu, toolbar, editor, preview, palette ký hiệu, panel AI, lưu phiên làm việc và điều phối lệnh.
-3. `src/editor.py` cung cấp trình soạn thảo Markdown, snippet, auto-pair và line number.
-4. `src/highlighter.py` tô màu cú pháp Markdown, công thức và code block.
-5. `src/preview.py` chuyển Markdown sang HTML, render bằng `QWebEngineView`, MathJax và TikZ; hỗ trợ render đoạn đang soạn khi tự động và render toàn bộ khi `Compile`.
-6. `src/exporters.py` chuyển Markdown sang HTML/LaTeX/DOCX và hỗ trợ luồng xuất PDF thông qua LaTeX.
-7. `src/ai_assistant.py` quản lý chat AI, model Gemini, API key, ảnh dán vào chat và các thao tác chèn/thay phản hồi.
-8. `src/config.py` chứa hằng số ứng dụng, cấu hình mặc định, snippet, danh sách model fallback, file session/recent/config trong thư mục người dùng.
+1. `eMeX.py` tạo `QApplication`, ép light theme, nạp icon và hiển thị splash.
+2. `SplashScreen` hiển thị trạng thái khởi động và giữ tối thiểu một khoảng ngắn để tránh nhấp nháy UI.
+3. `EmexWindow` dựng layout chính: cột trái, tab editor, preview, status bar, toolbar và các panel phụ.
+4. Nếu có đường dẫn tệp trong argv, ứng dụng mở tất cả thành tab.
+5. Sau khi UI sẵn sàng, splash đóng và cửa sổ chính mở maximized.
+
+Luồng soạn thảo và preview:
+
+1. Mỗi tab chứa một `CodeEditor`.
+2. Khi nội dung thay đổi, `preview_timer` debounce rồi render block đang soạn.
+3. Nếu block có TikZ hoặc nội dung cần render đầy đủ, người dùng dùng `Ctrl+Enter` hoặc nút `Compile`.
+4. Preview gắn `data-source-line` vào các block HTML để hỗ trợ double-click đồng bộ về dòng nguồn.
+
+Luồng xuất tài liệu:
+
+1. Người dùng chọn định dạng trong menu `Xuất` ở toolbar preview.
+2. HTML, LaTeX và DOCX chạy qua worker nền để không khóa giao diện.
+3. PDF dùng preview hiện tại, chờ MathJax/TikZ render xong rồi gọi `printToPdf`.
+4. Sau khi xuất thành công, eMeX lưu `last_export_path` để nút `Mở tệp vừa xuất` mở lại nhanh.
+
+Luồng AI:
+
+1. API key và model được cấu hình trong `Cài đặt > Gemini AI`.
+2. `AIChatWidget` gom lịch sử chat, ảnh đính kèm, văn bản dán và gửi cho Gemini.
+3. `GeminiWorker` chạy nền, dùng README làm ngữ cảnh ưu tiên để trợ lý trả lời theo đúng chức năng eMeX.
+4. Phản hồi được render Markdown trong bubble. Trợ lý chỉ tập trung hỗ trợ cách dùng eMeX và soạn/chỉnh Markdown, MathJax, TikZ trong tài liệu eMeX.
+
+Luồng cập nhật:
+
+1. Sau khi mở app, `UpdateChecker` kiểm tra GitHub Releases.
+2. Nếu có version mới hơn `APP_VERSION` hoặc version trong bundle macOS, app hiển thị thông báo cập nhật.
+3. `UpdateDialog` cho phép cập nhật ngay, nhắc lại sau hoặc bỏ qua phiên bản đó.
+4. `UpdateDownloader` tải asset phù hợp: Windows zip, macOS tar.gz hoặc Linux tar.gz.
+5. Bản đóng gói được thay thế bằng script cập nhật nền, sau đó app khởi động lại.
 
 ## Cấu trúc thư mục
 
 ```text
-eMeX.py                         Entry point desktop app
-src/
-  main_window.py                Cửa sổ chính, toolbar, layout, session
-  editor.py                     Markdown editor
-  highlighter.py                Syntax highlighting
-  preview.py                    Markdown preview, MathJax, TikZ, sync vị trí
-  exporters.py                  Export HTML, LaTeX, PDF, DOCX
-  ai_assistant.py               Chat AI Gemini, model/API key/image paste
-  symbol_palette.py             Bảng ký hiệu và Markdown nhanh
-  dialogs.py                    About/settings dialog
-  config.py                     Cấu hình, snippet, recent files, API key
-docs/assets/                    Icon ứng dụng PNG/ICO/ICNS
-scripts/
-  prepare_icons.py              Sinh ICO/ICNS từ PNG nguồn
-  install-linux-desktop.sh      Tạo desktop entry cho Linux build
-.github/workflows/build.yml     Build đa nền tảng và release tự động
-build.spec                      PyInstaller spec
+eMeX.py                         Entry point, QApplication, splash, mở nhiều file
+build.spec                      PyInstaller spec cho Windows/macOS/Linux
 requirements.txt                Runtime dependencies
+README.md                       Tài liệu kiến trúc và hướng dẫn
+
+src/
+  main_window.py                Cửa sổ chính, tab, toolbar, export, session, update check
+  editor.py                     Markdown editor, autocomplete, auto-pair, line number
+  highlighter.py                Markdown syntax highlighter
+  preview.py                    Markdown -> HTML, MathJax, TikZ, sync editor/preview
+  exporters.py                  HTML, LaTeX, DOCX, helper cho PDF workflow
+  ai_assistant.py               Chat Gemini, markdown bubble, image/text attachment
+  symbol_palette.py             Bảng ký hiệu và Markdown nhanh
+  dialogs.py                    Settings, About, model fetcher
+  i18n.py                       Dịch runtime tiếng Việt/tiếng Anh
+  splash.py                     Splash screen
+  workers.py                    Worker nền và toast notification
+  updater.py                    Kiểm tra/tải/cài bản cập nhật từ GitHub Releases
+  update_dialog.py              Hộp thoại cập nhật
+
+docs/assets/                    Icon PNG/ICO/ICNS
+examples/document.md            Tài liệu mẫu Markdown
+scripts/prepare_icons.py        Sinh ICO/ICNS từ PNG nguồn
+scripts/install-linux-desktop.sh Tạo desktop entry cho Linux
+.github/workflows/build.yml     Build đa nền tảng và Release tự động
 ```
 
 ## Cấu hình người dùng
 
-eMeX lưu cấu hình cục bộ trong thư mục:
+eMeX lưu cấu hình cục bộ tại:
 
 ```text
 ~/.emex_editor/
 ```
 
-Các file quan trọng:
+Các file chính:
 
-- `session.json`: phiên làm việc gần nhất.
-- `editor_config.json`: font, wrap, line number, model đang chọn.
-- `recent_files.json`: danh sách file gần đây.
+- `session.json`: phiên làm việc, danh sách tab và nội dung chưa lưu.
+- `editor_config.json`: ngôn ngữ, font, wrap, line number, autosave, layout UI, model Gemini.
+- `recent_files.json`: tệp gần đây.
 - `ai_config.json`: Gemini API key.
+- `user_snippets.json`: snippet người dùng.
+- `page_templates.json`: mẫu trang do người dùng tạo.
+- `update_skip.json`: phiên bản cập nhật đã chọn bỏ qua.
+- `update.log` và `update-install.log`: log cập nhật.
 
-Các file này là dữ liệu máy cá nhân, không đưa lên GitHub.
+Không commit các file cấu hình cá nhân này lên GitHub.
+
+## Phím tắt chính
+
+| Phím | Chức năng |
+| --- | --- |
+| `Ctrl+N` | Tạo trang mới hoặc chọn mẫu |
+| `Ctrl+O` | Mở tệp Markdown |
+| `Ctrl+S` | Lưu tab hiện tại |
+| `Ctrl+Shift+S` | Lưu thành |
+| `Ctrl+B` / `Ctrl+I` | In đậm / in nghiêng |
+| `Ctrl+M` | Chèn toán inline |
+| `Ctrl+Shift+M` | Chèn toán block |
+| `Ctrl+T` | Chèn bảng |
+| `Ctrl+/` | Bật/tắt comment HTML |
+| `Ctrl+F` / `Ctrl+H` | Tìm / thay |
+| `Ctrl+Enter` | Compile preview toàn tài liệu |
+| `Ctrl+P` | Bật/tắt preview |
+| `Ctrl+G` | Mở Trợ lý eMeX |
+| `F11` | Chế độ tập trung |
 
 ## Chạy từ mã nguồn
 
@@ -110,21 +176,19 @@ Cài dependency:
 python -m pip install -r requirements.txt
 ```
 
-Chạy ứng dụng:
+Chạy app:
 
 ```bash
 python eMeX.py
 ```
 
-Mở kèm một file Markdown:
+Mở nhiều file:
 
 ```bash
-python eMeX.py path/to/document.md
+python eMeX.py bai-1.md bai-2.md
 ```
 
-## Build desktop
-
-Build local bằng PyInstaller:
+## Build desktop local
 
 ```bash
 python -m pip install -r requirements.txt pyinstaller pillow certifi
@@ -132,15 +196,15 @@ python scripts/prepare_icons.py
 pyinstaller build.spec --noconfirm --clean
 ```
 
-Kết quả Windows local nằm ở:
+Kết quả Windows:
 
 ```text
 dist/eMeX/eMeX.exe
 ```
 
-`build.spec` được thiết kế để bundle các phần cần thiết cho PyQt6 WebEngine, icon ứng dụng và dữ liệu runtime trong `docs/assets`.
+Khi build release, `build.spec` bundle icon, PyQt6 WebEngine, certifi và dữ liệu runtime cần thiết.
 
-## GitHub Actions
+## GitHub Actions và Releases
 
 Workflow chính:
 
@@ -150,55 +214,42 @@ Workflow chính:
 
 Workflow chạy khi:
 
-- Push lên nhánh `main`.
-- Push tag dạng `vYYYY.MM.DD.xx`, ví dụ `v2026.05.27.01`.
+- Push lên `main`.
+- Push tag dạng `vYYYY.MM.DD.xx`.
 - Chạy thủ công bằng `workflow_dispatch`.
 
-Các artifact được tạo:
+Artifact build:
 
 - `emex-windows-x64.zip`
 - `emex-macos-intel.tar.gz`
 - `emex-macos-arm64.tar.gz`
 - `emex-linux-x64.tar.gz`
 
-## GitHub Releases tự động
+Release tự động:
 
-Sau khi build cả 4 nền tảng thành công, job `release` sẽ tự tạo GitHub Release cho mỗi lần workflow chạy.
+- Sau khi build cả 4 nền tảng thành công, job `release` tạo GitHub Release.
+- Tag bắt buộc có dạng `vYYYY.MM.DD.xx`.
+- `YYYY.MM.DD` theo ngày Việt Nam.
+- `xx` là số thứ tự trong ngày, bắt đầu từ `01`.
+- Nếu commit đã có tag hợp lệ, Release dùng tag đó.
+- Nếu không có tag, workflow tự sinh tag kế tiếp theo ngày hiện tại.
+- Nếu chạy thủ công và nhập `release_tag`, tag phải đúng định dạng.
 
-Quy tắc tag phiên bản:
-
-- Dạng bắt buộc: `vYYYY.MM.DD.xx`.
-- `YYYY.MM.DD` là ngày theo múi giờ Việt Nam.
-- `xx` là số thứ tự trong ngày, bắt đầu từ `01`, sau đó tăng `02`, `03`, ...
-- Nếu push `main` hoặc chạy workflow thủ công không nhập tag, workflow tự sinh tag kế tiếp.
-- Nếu push tag hoặc nhập `release_tag` thủ công, tag phải đúng định dạng trên.
-
-Ví dụ tag hợp lệ:
-
-```bash
-git tag v2026.05.27.01
-git push origin v2026.05.27.01
-```
-
-GitHub Actions sẽ build, kiểm tra artifact, sau đó tạo Release `eMeX v2026.05.27.01` và đính kèm đủ 4 gói tải về.
-
-Nếu chạy thủ công trong tab Actions và muốn tự chỉ định tag, nhập:
+Nếu release job báo lỗi quyền, kiểm tra GitHub repo:
 
 ```text
-release_tag = v2026.05.27.01
+Settings > Actions > General > Workflow permissions > Read and write permissions
 ```
 
-Nếu để trống, workflow tự tạo tag kế tiếp theo ngày hiện tại.
+## Quy trình đẩy GitHub và phát hành
 
-## Đẩy mã nguồn lên GitHub
-
-Remote chính của dự án:
+Remote chính:
 
 ```bash
 git remote add origin https://github.com/nhhai-math/eMeX.git
 ```
 
-Quy trình cập nhật thông thường:
+Quy trình cập nhật bình thường:
 
 ```bash
 git add .
@@ -206,17 +257,32 @@ git commit -m "Mô tả thay đổi"
 git push origin main
 ```
 
-Nhánh chính:
+Quy trình phát hành có tag thủ công:
 
-```text
-main
+```bash
+git add .
+git commit -m "Mô tả thay đổi"
+git tag vYYYY.MM.DD.xx
+git push origin main vYYYY.MM.DD.xx
 ```
 
-Commit đầu tiên đã được push lên GitHub, và các thay đổi tiếp theo nên đi theo cùng nhánh `main`. Build artifact, cache, file export và dữ liệu cấu hình cá nhân đã được loại khỏi Git bằng `.gitignore`.
+Ví dụ:
+
+```bash
+git tag v2026.05.27.02
+git push origin main v2026.05.27.02
+```
+
+Sau khi push, GitHub Actions build lại và Release sẽ xuất hiện tại:
+
+<https://github.com/nhhai-math/eMeX/releases>
 
 ## Ghi chú phát triển
 
 - Không commit API key Gemini hoặc dữ liệu trong `~/.emex_editor`.
-- Không commit thư mục `build/`, `dist/`, `upload-artifact/` hoặc file export sinh ra trong `examples/`.
-- Khi thay đổi phần preview, cần chú ý `QWebEngineView`, MathJax và luồng render từng đoạn để tránh render lại toàn bộ tài liệu quá thường xuyên.
-- Khi thay đổi AI chat, cần giữ nguyên luồng nhập ảnh, markdown message và thao tác chèn/thay nội dung phản hồi.
+- Không commit `build/`, `dist/`, `upload-artifact/`, file cache Python hoặc file export tạm.
+- Khi sửa preview, cần kiểm tra cả auto render block hiện tại và compile toàn tài liệu.
+- Khi sửa export PDF, cần kiểm tra preview đã render MathJax/TikZ trước khi `printToPdf`.
+- Khi sửa DOCX, chú ý parser OMML trong `src/exporters.py` và fallback readable text.
+- Khi sửa AI, giữ ràng buộc trợ lý tập trung vào eMeX và dùng README làm ngữ cảnh.
+- Khi sửa updater, kiểm tra đúng asset theo nền tảng và không chạy self-update khi đang chạy từ source.
