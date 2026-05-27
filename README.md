@@ -6,6 +6,21 @@ eMeX là trình soạn thảo Markdown cho tài liệu toán học, tập trung 
 
 <https://github.com/nhhai-math/eMeX.git>
 
+## Tải phần mềm
+
+Người dùng cuối có thể tải bản phát hành mới nhất tại:
+
+<https://github.com/nhhai-math/eMeX/releases/latest>
+
+Link tải trực tiếp:
+
+- Windows x64: <https://github.com/nhhai-math/eMeX/releases/latest/download/emex-windows-x64.zip>
+- macOS Intel: <https://github.com/nhhai-math/eMeX/releases/latest/download/emex-macos-intel.tar.gz>
+- macOS Apple Silicon: <https://github.com/nhhai-math/eMeX/releases/latest/download/emex-macos-arm64.tar.gz>
+- Linux x64: <https://github.com/nhhai-math/eMeX/releases/latest/download/emex-linux-x64.tar.gz>
+
+Các link trực tiếp sẽ hoạt động sau khi GitHub Actions tạo Release đầu tiên từ tag dạng `v*`.
+
 ## Chức năng chính
 
 - Soạn thảo Markdown với syntax highlight, line number, snippet và bảng ký hiệu toán.
