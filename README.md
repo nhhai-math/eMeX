@@ -93,7 +93,7 @@ Luồng AI:
 Luồng cập nhật:
 
 1. Sau khi mở app, `UpdateChecker` kiểm tra GitHub Releases.
-2. Nếu có version mới hơn `APP_VERSION` hoặc version trong bundle macOS, app hiển thị thông báo cập nhật.
+2. Nếu có version mới hơn version đọc từ `VERSION` hoặc version trong bundle macOS, app hiển thị thông báo cập nhật.
 3. `UpdateDialog` cho phép cập nhật ngay, nhắc lại sau hoặc bỏ qua phiên bản đó.
 4. `UpdateDownloader` tải asset phù hợp: Windows zip, macOS tar.gz hoặc Linux tar.gz.
 5. Bản đóng gói được thay thế bằng script cập nhật nền, sau đó app khởi động lại.
@@ -102,6 +102,7 @@ Luồng cập nhật:
 
 ```text
 eMeX.py                         Entry point, QApplication, splash, mở nhiều file
+VERSION                         Version runtime, lấy từ tag release khi build
 build.spec                      PyInstaller spec cho Windows/macOS/Linux
 requirements.txt                Runtime dependencies
 README.md                       Tài liệu kiến trúc và hướng dẫn
@@ -234,6 +235,8 @@ Release tự động:
 - Nếu commit đã có tag hợp lệ, Release dùng tag đó.
 - Nếu không có tag, workflow tự sinh tag kế tiếp theo ngày hiện tại.
 - Nếu chạy thủ công và nhập `release_tag`, tag phải đúng định dạng.
+- Trước khi PyInstaller build, workflow ghi `VERSION` bằng tag đã resolve sau khi bỏ chữ `v`.
+- `VERSION` được bundle vào artifact để app, About dialog và updater nhận đúng version của bản phát hành.
 
 Nếu release job báo lỗi quyền, kiểm tra GitHub repo:
 
@@ -260,6 +263,7 @@ git push origin main
 Quy trình phát hành có tag thủ công:
 
 ```bash
+echo YYYY.MM.DD.xx > VERSION
 git add .
 git commit -m "Mô tả thay đổi"
 git tag vYYYY.MM.DD.xx
@@ -269,8 +273,11 @@ git push origin main vYYYY.MM.DD.xx
 Ví dụ:
 
 ```bash
-git tag v2026.05.27.02
-git push origin main v2026.05.27.02
+echo 2026.05.27.03 > VERSION
+git add .
+git commit -m "Phát hành v2026.05.27.03"
+git tag v2026.05.27.03
+git push origin main v2026.05.27.03
 ```
 
 Sau khi push, GitHub Actions build lại và Release sẽ xuất hiện tại:

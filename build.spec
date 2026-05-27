@@ -21,6 +21,13 @@ def _append_file_if_exists(items: list[tuple[str, str]], source: Path, destinati
 
 
 def _read_app_version() -> str:
+    version_file = ROOT / "VERSION"
+    if version_file.exists():
+        version = version_file.read_text(encoding="utf-8").strip()
+        if version.lower().startswith("v"):
+            version = version[1:]
+        if version:
+            return version
     config_py = ROOT / "src" / "config.py"
     if not config_py.exists():
         return "0.0.0"
@@ -114,6 +121,7 @@ EXCLUDES = [
 
 datas = []
 datas += collect_data_files("certifi")
+_append_file_if_exists(datas, ROOT / "VERSION", ".")
 for asset_name in ("icon_eMeX.png", "icon_eMeX_256.png", "icon_eMeX.ico", "icon_eMeX.icns"):
     _append_file_if_exists(datas, ROOT / "docs" / "assets" / asset_name, "docs/assets")
 

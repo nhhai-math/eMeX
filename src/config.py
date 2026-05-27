@@ -4,9 +4,42 @@ import json
 import sys
 
 APP_NAME = "eMeX"
-APP_VERSION = "1.1.0"
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 APP_ICON_FILE = os.path.join(ROOT_DIR, "docs", "assets", "icon_eMeX.png")
+APP_VERSION_FALLBACK = "2026.05.27.03"
+
+
+def _read_app_version():
+    """Read app version from bundled/source VERSION file.
+
+    Release builds write this file from the Git tag, e.g. v2026.05.27.03
+    becomes 2026.05.27.03. Keeping runtime version data in a file prevents
+    the updater from comparing a packaged release against a stale hard-coded
+    value.
+    """
+    exe_dir = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else ""
+    candidates = [
+        os.path.join(ROOT_DIR, "VERSION"),
+        os.path.join(getattr(sys, "_MEIPASS", ""), "VERSION"),
+        os.path.join(exe_dir, "VERSION") if exe_dir else "",
+        os.path.join(exe_dir, "_internal", "VERSION") if exe_dir else "",
+    ]
+    for path in candidates:
+        if not path:
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                version = f.read().strip()
+        except OSError:
+            continue
+        if version.lower().startswith("v"):
+            version = version[1:]
+        if version:
+            return version
+    return APP_VERSION_FALLBACK
+
+
+APP_VERSION = _read_app_version()
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".emex_editor")
 if not os.path.exists(CONFIG_DIR):
