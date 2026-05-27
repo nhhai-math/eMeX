@@ -251,6 +251,7 @@ jobs:
             sort -V |
             tail -n 1 || true
           )"
+          SHOULD_PUBLISH=true
 
           if [[ -n "$MANUAL_RELEASE_TAG" ]]; then
             TAG="$MANUAL_RELEASE_TAG"
@@ -258,6 +259,7 @@ jobs:
             TAG="$GITHUB_REF_NAME"
           elif [[ -n "$COMMIT_TAG" ]]; then
             TAG="$COMMIT_TAG"
+            SHOULD_PUBLISH=false
           else
             DATE_PART="$(TZ=Asia/Ho_Chi_Minh date +'%Y.%m.%d')"
             PREFIX="v${DATE_PART}."
