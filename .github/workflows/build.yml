@@ -81,6 +81,7 @@ jobs:
             sort -V |
             tail -n 1 || true
           )"
+          SHOULD_PUBLISH=true
 
           if [[ -n "$MANUAL_RELEASE_TAG" ]]; then
             TAG="$MANUAL_RELEASE_TAG"
@@ -88,6 +89,10 @@ jobs:
             TAG="$GITHUB_REF_NAME"
           elif [[ -n "$COMMIT_TAG" ]]; then
             TAG="$COMMIT_TAG"
+            # Pushes that include both main and a tag create two workflow runs for
+            # the same commit. Let the tag run publish the Release and keep the
+            # branch run as build-only to avoid concurrent asset uploads.
+            SHOULD_PUBLISH=false
           else
             DATE_PART="$(TZ=Asia/Ho_Chi_Minh date +'%Y.%m.%d')"
             PREFIX="v${DATE_PART}."
@@ -279,15 +284,25 @@ jobs:
           fi
 
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "publish=$SHOULD_PUBLISH" >> "$GITHUB_OUTPUT"
           echo "Release tag: $TAG"
+          echo "Publish release: $SHOULD_PUBLISH"
+
+      - name: Skip duplicate branch release
+        if: steps.release_tag.outputs.publish != 'true'
+        run: |
+          echo "Commit already has release tag ${{ steps.release_tag.outputs.tag }}."
+          echo "Skipping release publication in this branch run; the tag run will publish it."
 
       - name: Download build artifacts
+        if: steps.release_tag.outputs.publish == 'true'
         uses: actions/download-artifact@v4
         with:
           path: release-files
           merge-multiple: true
 
       - name: List release files
+        if: steps.release_tag.outputs.publish == 'true'
         run: |
           ls -lah release-files/
           for file in release-files/*; do
@@ -295,6 +310,7 @@ jobs:
           done
 
       - name: Validate release files
+        if: steps.release_tag.outputs.publish == 'true'
         env:
           RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
         run: |
@@ -315,6 +331,7 @@ jobs:
           done
 
       - name: Generate release notes
+        if: steps.release_tag.outputs.publish == 'true'
         env:
           RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
         run: |
@@ -331,6 +348,7 @@ jobs:
           } > release-notes.md
 
       - name: Publish GitHub Release
+        if: steps.release_tag.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}

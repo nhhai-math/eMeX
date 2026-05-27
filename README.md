@@ -237,6 +237,7 @@ Release tự động:
 - Nếu chạy thủ công và nhập `release_tag`, tag phải đúng định dạng.
 - Trước khi PyInstaller build, workflow ghi `VERSION` bằng tag đã resolve sau khi bỏ chữ `v`.
 - `VERSION` được bundle vào artifact để app, About dialog và updater nhận đúng version của bản phát hành.
+- Nếu cùng một commit được push cả `main` và tag, run của `main` chỉ build; run của tag là nơi publish Release để tránh upload trùng.
 
 Nếu release job báo lỗi quyền, kiểm tra GitHub repo:
 
@@ -273,11 +274,11 @@ git push origin main vYYYY.MM.DD.xx
 Ví dụ:
 
 ```bash
-echo 2026.05.27.03 > VERSION
+echo 2026.05.27.04 > VERSION
 git add .
-git commit -m "Phát hành v2026.05.27.03"
-git tag v2026.05.27.03
-git push origin main v2026.05.27.03
+git commit -m "Phát hành v2026.05.27.04"
+git tag v2026.05.27.04
+git push origin main v2026.05.27.04
 ```
 
 Sau khi push, GitHub Actions build lại và Release sẽ xuất hiện tại:

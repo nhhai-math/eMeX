@@ -6,14 +6,14 @@ import sys
 APP_NAME = "eMeX"
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 APP_ICON_FILE = os.path.join(ROOT_DIR, "docs", "assets", "icon_eMeX.png")
-APP_VERSION_FALLBACK = "2026.05.27.03"
+APP_VERSION_FALLBACK = "2026.05.27.04"
 
 
 def _read_app_version():
     """Read app version from bundled/source VERSION file.
 
-    Release builds write this file from the Git tag, e.g. v2026.05.27.03
-    becomes 2026.05.27.03. Keeping runtime version data in a file prevents
+    Release builds write this file from the Git tag, e.g. vYYYY.MM.DD.xx
+    becomes YYYY.MM.DD.xx. Keeping runtime version data in a file prevents
     the updater from comparing a packaged release against a stale hard-coded
     value.
     """
