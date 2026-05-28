@@ -213,9 +213,9 @@ class ChatBubble(QFrame):
                 "QFrame#chatBubble{background:#ffffff;border:1px solid #e2e8f0;"
                 "border-radius:14px;border-bottom-left-radius:4px;}"
                 "QLabel{background:transparent;color:#0f172a;}")
-        bubble.setSizePolicy(QSizePolicy.Policy.Maximum,
+        bubble.setSizePolicy(QSizePolicy.Policy.Preferred,
                               QSizePolicy.Policy.Preferred)
-        bubble.setMaximumWidth(self.MAX_BUBBLE_WIDTH)
+        self._bubble_frame = bubble
 
         bubble_lay = QVBoxLayout(bubble)
         bubble_lay.setContentsMargins(13, 9, 13, 10)
@@ -259,9 +259,16 @@ class ChatBubble(QFrame):
             outer.addWidget(avatar, 0, Qt.AlignmentFlag.AlignTop)
             outer.addWidget(bubble, 0)
             outer.addStretch(1)
+        self.set_available_width(self.MAX_BUBBLE_WIDTH)
 
     def set_markdown_text(self, markdown_text):
         self._content_label.setText(_bubble_styled_html(markdown_text, color=self._content_color))
+
+    def set_available_width(self, width):
+        width = max(160, min(self.MAX_BUBBLE_WIDTH, int(width)))
+        self._bubble_frame.setMaximumWidth(width)
+        self._content_label.setMaximumWidth(max(120, width - 32))
+        self.updateGeometry()
 
 
 class TypingBubble(QFrame):
@@ -796,6 +803,7 @@ class AIChatWidget(QWidget):
     def _append_chat_bubble(self, role, text, images=None, files=None):
         bubble = ChatBubble(
             role, text, images=images, files=files, parent=self.chat_container)
+        self._fit_chat_bubble(bubble)
         insert_idx = max(0, self.chat_layout.count() - 1)  # trước stretch
         # Nếu đang có typing indicator, đặt message trước nó để giữ thứ tự.
         if self._typing_bubble is not None:
@@ -805,6 +813,28 @@ class AIChatWidget(QWidget):
         self.chat_layout.insertWidget(insert_idx, bubble)
         QTimer.singleShot(10, self._scroll_to_bottom)
         return bubble
+
+    def _available_bubble_width(self):
+        widths = [
+            value for value in (self.width(), self.chat_scroll.viewport().width())
+            if value and value > 0
+        ]
+        viewport_width = min(widths) if widths else self.MAX_BUBBLE_WIDTH
+        # Trừ avatar, spacing, margins và scrollbar để bubble không bị cắt ở panel hẹp.
+        return max(160, viewport_width - 74)
+
+    def _fit_chat_bubble(self, bubble):
+        if isinstance(bubble, ChatBubble):
+            bubble.set_available_width(self._available_bubble_width())
+
+    def _fit_all_chat_bubbles(self):
+        for i in range(self.chat_layout.count()):
+            widget = self.chat_layout.itemAt(i).widget()
+            self._fit_chat_bubble(widget)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self._fit_all_chat_bubbles)
 
     def _scroll_to_bottom(self):
         sb = self.chat_scroll.verticalScrollBar()

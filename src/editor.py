@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import QCompleter, QPlainTextEdit, QTextEdit, QWidget
 
 from .config import MARKDOWN_TEMPLATES
 from .highlighter import MarkdownHighlighter
+from .text_normalizer import normalize_external_paste_text
 
 
 PAIR_MAP = {
@@ -275,6 +276,14 @@ class CodeEditor(QPlainTextEdit):
             handler = getattr(self.main_window, "_insert_pasted_image_from_mime", None)
             if handler and handler(self, source):
                 return
+        if source.hasText():
+            text = normalize_external_paste_text(source.text())
+            cursor = self.textCursor()
+            cursor.beginEditBlock()
+            cursor.insertText(text)
+            cursor.endEditBlock()
+            self.setTextCursor(cursor)
+            return
         super().insertFromMimeData(source)
 
     def dragEnterEvent(self, event):

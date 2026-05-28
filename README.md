@@ -274,11 +274,11 @@ git push origin main vYYYY.MM.DD.xx
 Ví dụ:
 
 ```bash
-echo 2026.05.27.05 > VERSION
+echo 2026.05.28.01 > VERSION
 git add .
-git commit -m "Phát hành v2026.05.27.05"
-git tag v2026.05.27.05
-git push origin main v2026.05.27.05
+git commit -m "Phát hành v2026.05.28.01"
+git tag v2026.05.28.01
+git push origin main v2026.05.28.01
 ```
 
 Sau khi push, GitHub Actions build lại và Release sẽ xuất hiện tại:

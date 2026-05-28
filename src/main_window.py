@@ -1392,21 +1392,33 @@ class EmexWindow(QMainWindow):
                     end += 1
                 return block_join(fence_start, end)
 
-        # Display math $$...$$.
-        math_start = None
-        for i in range(line, -1, -1):
-            if stripped(i).startswith("$$"):
-                math_start = i
-                break
-        if math_start is not None:
-            math_count = sum(1 for i in range(0, math_start + 1) if stripped(i).startswith("$$"))
-            if math_count % 2 == 1:
+        # Display math $$...$$, \[...\], plus legacy pasted [...] blocks.
+        math_delimiters = (("$$", "$$", "startswith"), (r"\[", r"\]", "exact"), ("[", "]", "exact"))
+        for opener, closer, mode in math_delimiters:
+            math_start = None
+            for i in range(line, -1, -1):
+                token = stripped(i)
+                if (mode == "startswith" and token.startswith(opener)) or token == opener:
+                    math_start = i
+                    break
+            if math_start is None:
+                continue
+            if mode == "startswith":
+                math_count = sum(1 for i in range(0, math_start + 1)
+                                 if stripped(i).startswith(opener))
+                if math_count % 2 != 1:
+                    continue
                 end = math_start
-                while end + 1 < len(lines) and not stripped(end + 1).endswith("$$"):
+                while end + 1 < len(lines) and not stripped(end + 1).endswith(closer):
                     end += 1
                 if end + 1 < len(lines):
+                    return block_join(math_start, end + 1)
+            else:
+                end = math_start
+                while end + 1 < len(lines) and stripped(end + 1) != closer:
                     end += 1
-                return block_join(math_start, end)
+                if end + 1 < len(lines):
+                    return block_join(math_start, end + 1)
 
         cur = stripped(line)
         if is_table_line(cur):

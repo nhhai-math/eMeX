@@ -6,7 +6,7 @@ import sys
 APP_NAME = "eMeX"
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 APP_ICON_FILE = os.path.join(ROOT_DIR, "docs", "assets", "icon_eMeX.png")
-APP_VERSION_FALLBACK = "2026.05.27.05"
+APP_VERSION_FALLBACK = "2026.05.28.01"
 
 
 def _read_app_version():

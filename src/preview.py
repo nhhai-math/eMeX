@@ -11,6 +11,7 @@ from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from .i18n import t
+from .text_normalizer import normalize_markdown_for_compile
 
 
 try:
@@ -103,6 +104,9 @@ mjx-container[jax="SVG"][display="true"] {
   margin: 1em 0;
   overflow-x: auto;
   overflow-y: hidden;
+}
+.emex-math-block {
+  margin: 1em 0;
 }
 .error-box {
   background:#fef2f2; color:#991b1b;
@@ -266,6 +270,69 @@ def _tikz_to_html(code):
 </script></div>"""
 
 
+def _extract_display_math_blocks(source):
+    blocks = []
+    lines = source.split("\n")
+    out = []
+    i = 0
+    in_fence = False
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        if re.match(r"^\s*(```|~~~)", stripped):
+            in_fence = not in_fence
+            out.append(line)
+            i += 1
+            continue
+
+        if in_fence or not stripped.startswith("$$"):
+            out.append(line)
+            i += 1
+            continue
+
+        block_lines = []
+        first = line[line.find("$$") + 2:]
+        if first.strip().endswith("$$") and first.strip() != "$$":
+            block_lines.append(first[:first.rfind("$$")])
+            i += 1
+        else:
+            if first.strip():
+                block_lines.append(first)
+            i += 1
+            while i < len(lines):
+                candidate = lines[i]
+                candidate_stripped = candidate.strip()
+                if candidate_stripped.endswith("$$"):
+                    end_index = candidate.rfind("$$")
+                    if candidate[:end_index].strip():
+                        block_lines.append(candidate[:end_index])
+                    i += 1
+                    break
+                block_lines.append(candidate)
+                i += 1
+
+        idx = len(blocks)
+        blocks.append("\n".join(block_lines).strip())
+        out.append(f"@@EMEX_MATH_BLOCK_{idx}@@")
+
+    return "\n".join(out), blocks
+
+
+def _math_to_html(code):
+    safe = html.escape(code, quote=False)
+    return f"""<div class="emex-math-block">$$
+{safe}
+$$</div>"""
+
+
+def _restore_html_block(body, token, replacement):
+    pattern = rf"<p>\s*{re.escape(token)}\s*</p>"
+    body = re.sub(pattern, lambda _match: replacement, body)
+    return body.replace(token, replacement)
+
+
 def _local_image_src_to_file_url(src):
     """Convert Windows local image paths from Markdown into browser-safe file URLs."""
     src = html.unescape(src or "").strip()
@@ -388,7 +455,7 @@ def _preview_sync_script(source, first_line=1):
 <script>
 window.__emexSourceLines = {line_starts};
 (function installEmexSync(){{
-  const selector = 'h1,h2,h3,h4,h5,h6,p,pre,blockquote,table,ul,ol,hr,.edraw-tikz-block';
+  const selector = 'h1,h2,h3,h4,h5,h6,p,pre,blockquote,table,ul,ol,hr,.edraw-tikz-block,.emex-math-block';
   const blocks = Array.from(document.body.children).filter(el => el.matches(selector));
   blocks.forEach((el, index) => {{
     const line = window.__emexSourceLines[index];
@@ -408,7 +475,9 @@ window.__emexSourceLines = {line_starts};
 def markdown_to_html(source, enable_sync=False, first_line=1, title=None):
     """Convert markdown source -> standalone HTML."""
     title = title or t("Xem trước")
+    source = normalize_markdown_for_compile(source)
     src_no_tikz, tikz_blocks = _extract_tikz_blocks(source)
+    src_no_tikz, math_blocks = _extract_display_math_blocks(src_no_tikz)
     src_no_tikz = _apply_strikethrough_markup(src_no_tikz)
 
     if md_lib is not None:
@@ -421,7 +490,9 @@ def markdown_to_html(source, enable_sync=False, first_line=1, title=None):
         body = "<pre>" + html.escape(src_no_tikz) + "</pre>"
 
     for i, code in enumerate(tikz_blocks):
-        body = body.replace(f"<!--EMEX_TIKZ_BLOCK_{i}-->", _tikz_to_html(code))
+        body = _restore_html_block(body, f"<!--EMEX_TIKZ_BLOCK_{i}-->", _tikz_to_html(code))
+    for i, code in enumerate(math_blocks):
+        body = _restore_html_block(body, f"@@EMEX_MATH_BLOCK_{i}@@", _math_to_html(code))
 
     body = _normalize_local_image_sources(body)
     sync_script = _preview_sync_script(source, first_line=first_line) if enable_sync else ""
@@ -430,6 +501,8 @@ def markdown_to_html(source, enable_sync=False, first_line=1, title=None):
 
 def markdown_fragment_to_html(source):
     """Convert one markdown block to HTML. MathJax is applied in-place later."""
+    source = normalize_markdown_for_compile(source)
+    source, math_blocks = _extract_display_math_blocks(source)
     source = _apply_strikethrough_markup(source)
     if md_lib is not None:
         body = md_lib.markdown(
@@ -439,6 +512,8 @@ def markdown_fragment_to_html(source):
         )
     else:
         body = "<pre>" + html.escape(source) + "</pre>"
+    for i, code in enumerate(math_blocks):
+        body = _restore_html_block(body, f"@@EMEX_MATH_BLOCK_{i}@@", _math_to_html(code))
     return _normalize_local_image_sources(body)
 
 

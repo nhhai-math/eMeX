@@ -9,6 +9,7 @@ import html
 # ============================================================
 from .preview import markdown_to_html  # noqa: F401  (re-export)
 from .i18n import t
+from .text_normalizer import normalize_markdown_for_compile
 
 
 # ============================================================
@@ -589,6 +590,7 @@ def _markdown_to_latex_body(source):
 
 def markdown_to_latex(source, title="Tài liệu Markdown"):
     """Convert markdown source → standalone LaTeX document."""
+    source = normalize_markdown_for_compile(source)
     source = _strip_leading_title_h1(source, title)
     body = _markdown_to_latex_body(source)
     return (LATEX_TEMPLATE
@@ -601,6 +603,7 @@ def markdown_to_latex(source, title="Tài liệu Markdown"):
 # ============================================================
 def markdown_to_docx(source, path):
     """Convert markdown → .docx (cần python-docx)."""
+    source = normalize_markdown_for_compile(source)
     try:
         from docx import Document
         from docx.shared import Pt, RGBColor, Inches
