@@ -5,29 +5,32 @@ import os
 import shutil
 import sys
 
-from PyQt6.QtCore import QEvent, Qt, QRectF, QSize, QThread, QTimer, QUrl
+from PyQt6.QtCore import QDir, QEvent, Qt, QRectF, QSize, QThread, QTimer, QUrl
 from PyQt6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices,
-                          QFont, QIcon, QKeySequence, QLinearGradient, QPainter,
-                          QPen, QImage, QPixmap, QShortcut, QTextCursor,
-                          QTextDocument)
+                          QFileSystemModel, QFont, QIcon, QKeySequence,
+                          QLinearGradient, QPainter, QPen, QImage, QPixmap,
+                          QShortcut, QTextCursor, QTextDocument)
 from PyQt6.QtWidgets import (QApplication, QFileDialog, QHBoxLayout,
                               QInputDialog, QLabel, QLineEdit, QMainWindow,
                               QMenu, QMessageBox, QPlainTextEdit, QPushButton,
                               QSizePolicy, QSplitter, QStatusBar, QTabWidget,
-                              QTabBar, QToolBar, QToolButton, QVBoxLayout, QWidget,
-                              QFrame)
+                              QTabBar, QToolBar, QToolButton, QTreeView,
+                              QVBoxLayout, QWidget, QFrame)
 
 from .ai_assistant import AIChatWidget, AIQuickDialog
 from .config import (APP_ICON_FILE, APP_NAME, APP_VERSION, CONFIG_DIR,
-                     MARKDOWN_PAGE_TEMPLATES, SESSION_FILE, load_editor_config, load_recent,
-                     load_user_page_templates, push_recent, save_editor_config,
-                     save_json, save_user_page_templates)
+                     MARKDOWN_PAGE_TEMPLATES, SESSION_FILE, load_api_key,
+                     load_editor_config, load_recent, load_user_page_templates,
+                     push_recent, save_editor_config, save_json,
+                     save_user_page_templates)
 from .dialogs import AboutDialog, SettingsDialog
 from .editor import CodeEditor
 from .exporters import markdown_to_docx, markdown_to_html, markdown_to_latex
 from .i18n import t
 from .preview import PreviewPane
 from .symbol_palette import SymbolPalette
+from .translation import (normalize_compile_language, normalize_translation_tool,
+                          translate_markdown)
 from .workers import Toast, run_async
 
 
@@ -179,9 +182,19 @@ class EmexWindow(QMainWindow):
 
         self.symbol_palette = SymbolPalette(editor_config=self.editor_config)
         self.symbol_palette.snippet_clicked.connect(self._insert_snippet_to_current)
+        self.folder_tree_host = self._build_folder_tree()
+        self.folder_tree_host.setVisible(False)
 
         self.preview = PreviewPane(self)
+        self.preview.set_translation_tool(
+            self.editor_config.get("compile_translate_tool", "google"))
+        self.preview.set_translation_language(
+            self.editor_config.get("compile_translate_language", "none"))
         self.preview.btn_compile.clicked.connect(self._compile_preview)
+        self.preview.translate_tool_combo.currentIndexChanged.connect(
+            self._on_compile_translation_tool_changed)
+        self.preview.translate_combo.currentIndexChanged.connect(
+            self._on_compile_translation_language_changed)
         self.preview.web.loadFinished.connect(lambda _ok: self.preview.set_compiling(False))
         self.preview.web.source_line_requested.connect(self._sync_editor_to_preview_line)
 
@@ -194,10 +207,12 @@ class EmexWindow(QMainWindow):
 
         self.left_splitter = QSplitter(Qt.Orientation.Vertical)
         self.left_splitter.addWidget(self.symbol_palette)
+        self.left_splitter.addWidget(self.folder_tree_host)
         self.left_splitter.addWidget(self.ai_panel_host)
-        self.left_splitter.setSizes([720, 260])
+        self.left_splitter.setSizes([540, 0, 260])
         self.left_splitter.setStretchFactor(0, 1)
-        self.left_splitter.setStretchFactor(1, 0)
+        self.left_splitter.setStretchFactor(1, 1)
+        self.left_splitter.setStretchFactor(2, 0)
 
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.main_splitter.addWidget(self.left_splitter)
@@ -224,6 +239,57 @@ class EmexWindow(QMainWindow):
         self.status.addWidget(self.status_msg, 1)
         self.status.addPermanentWidget(self.status_words)
         self.status.addPermanentWidget(self.status_pos)
+
+    def _build_folder_tree(self):
+        host = QWidget()
+        host.setMinimumWidth(280)
+        host.setMaximumWidth(420)
+        host.setStyleSheet("""
+            QWidget{background:#f8fafc;color:#0f172a;}
+            QLabel{background:transparent;color:#0f172a;font-weight:700;}
+            QPushButton{
+                background:#ffffff;color:#475569;border:1px solid #cbd5e1;
+                border-radius:5px;padding:2px 8px;
+            }
+            QPushButton:hover{background:#fee2e2;color:#b91c1c;border-color:#fecaca;}
+            QTreeView{
+                background:#ffffff;color:#0f172a;border:0;border-top:1px solid #e5e7eb;
+                alternate-background-color:#f8fafc;
+            }
+            QTreeView::item{padding:4px 6px;}
+            QTreeView::item:selected{background:#dbeafe;color:#1d4ed8;}
+        """)
+        layout = QVBoxLayout(host)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(10, 7, 8, 7)
+        header_layout.setSpacing(6)
+        self.folder_tree_label = QLabel(t("Cây thư mục"))
+        self.btn_close_folder_tree = QPushButton("×")
+        self.btn_close_folder_tree.setFixedWidth(30)
+        self.btn_close_folder_tree.setToolTip(t("Ẩn cây thư mục"))
+        self.btn_close_folder_tree.clicked.connect(self._hide_folder_tree)
+        header_layout.addWidget(self.folder_tree_label, 1)
+        header_layout.addWidget(self.btn_close_folder_tree)
+        layout.addWidget(header)
+
+        self.folder_model = QFileSystemModel(self)
+        self.folder_model.setFilter(
+            QDir.Filter.AllDirs | QDir.Filter.Files | QDir.Filter.NoDotAndDotDot
+        )
+        self.folder_tree = QTreeView()
+        self.folder_tree.setModel(self.folder_model)
+        self.folder_tree.setHeaderHidden(True)
+        self.folder_tree.setAlternatingRowColors(True)
+        self.folder_tree.setAnimated(True)
+        self.folder_tree.doubleClicked.connect(self._on_folder_tree_double_clicked)
+        for column in range(1, self.folder_model.columnCount()):
+            self.folder_tree.hideColumn(column)
+        layout.addWidget(self.folder_tree, 1)
+        return host
 
     def _build_find_bar(self):
         bar = QWidget()
@@ -284,6 +350,9 @@ class EmexWindow(QMainWindow):
         self.act_open = QAction(emoji_icon("📂"), t("Mở (Ctrl+O)"), self)
         self.act_open.setShortcut("Ctrl+O")
         self.act_open.triggered.connect(self._open_file)
+
+        self.act_open_folder = QAction(emoji_icon("🗂"), t("Mở thư mục"), self)
+        self.act_open_folder.triggered.connect(self._open_folder)
 
         self.act_save = QAction(emoji_icon("💾"), t("Lưu (Ctrl+S)"), self)
         self.act_save.setShortcut("Ctrl+S")
@@ -356,12 +425,14 @@ class EmexWindow(QMainWindow):
         self.addAction(self.act_replace)
 
         self.act_render = QAction(emoji_icon("▶"), t("Biên dịch xem trước (Ctrl+Enter)"), self)
-        self.act_render.setShortcuts([QKeySequence("Ctrl+Return"), QKeySequence("Ctrl+Enter")])
         self.act_render.triggered.connect(self._compile_preview)
 
         self.act_ai = QAction(emoji_icon("🤖"), t("Trợ lý eMeX (Ctrl+G)"), self)
         self.act_ai.setShortcut("Ctrl+G")
         self.act_ai.triggered.connect(self.trigger_ai_assistant)
+        self.act_toggle_ai = QAction(emoji_icon("🤖"), t("Bật/Tắt nhanh Trợ lý eMeX"), self)
+        self.act_toggle_ai.setCheckable(True)
+        self.act_toggle_ai.toggled.connect(self._toggle_ai_compact)
 
         # ---- View ----
         self.act_toggle_preview = QAction(emoji_icon("👁"), t("Bật/Tắt xem trước (Ctrl+P)"), self)
@@ -388,10 +459,10 @@ class EmexWindow(QMainWindow):
         self.act_about.triggered.connect(self._open_about)
 
         # Các action nằm trong menu dropdown vẫn cần nhận shortcut khi menu đang đóng.
-        for action in (self.act_new, self.act_open, self.act_save, self.act_bold, self.act_italic,
-                       self.act_inline_math, self.act_block_math,
+        for action in (self.act_new, self.act_open, self.act_open_folder, self.act_save,
+                       self.act_bold, self.act_italic, self.act_inline_math, self.act_block_math,
                        self.act_table, self.act_comment, self.act_find,
-                       self.act_render, self.act_ai, self.act_toggle_preview,
+                       self.act_render, self.act_ai, self.act_toggle_ai, self.act_toggle_preview,
                        self.act_zen):
             action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
             self.addAction(action)
@@ -428,7 +499,7 @@ class EmexWindow(QMainWindow):
         self.btn_open.setText("📂")
         self.btn_open.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         self.btn_open.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.btn_open.setToolTip(t("Mở tệp Markdown / tệp gần đây"))
+        self.btn_open.setToolTip(t("Mở tệp Markdown / thư mục / tệp gần đây"))
         self.btn_open.setStyleSheet(
             f"QToolButton{{padding:{pad}px 10px;border-radius:8px;color:#334155;font-size:13px;}}"
             "QToolButton:hover{background:#eff6ff;color:#1d4ed8;}"
@@ -459,8 +530,10 @@ class EmexWindow(QMainWindow):
         tb.addWidget(spacer)
 
         # Right side – View toggles
+        tb.addAction(self.act_toggle_ai)
+        tb.addWidget(_vline())
         self.btn_view = self._make_action_menu_button("☷", t("Tùy chọn hiển thị"),
-            [self.act_toggle_palette, self.act_toggle_preview, self.act_zen])
+            [self.act_toggle_ai, self.act_toggle_palette, self.act_toggle_preview, self.act_zen])
         tb.addWidget(self.btn_view)
         tb.addWidget(_vline())
 
@@ -623,6 +696,8 @@ class EmexWindow(QMainWindow):
             "QMenu::separator{height:1px;background:#e5e7eb;margin:4px 6px;}")
         open_action = menu.addAction("📂   " + t("Mở..."))
         open_action.triggered.connect(self._open_file)
+        open_folder_action = menu.addAction("🗂   " + t("Mở thư mục"))
+        open_folder_action.triggered.connect(self._open_folder)
         menu.addSeparator()
         self.recent_files = load_recent()
         if not self.recent_files:
@@ -730,6 +805,73 @@ class EmexWindow(QMainWindow):
             t("Markdown (*.md *.markdown *.mdown *.txt);;Tất cả (*)"))
         for p in paths:
             self._open_specific_file(p)
+
+    def _open_folder(self):
+        start_dir = self.editor_config.get("ui_folder_tree_path", "")
+        editor = self._cur_editor()
+        if editor and editor.file_path:
+            start_dir = os.path.dirname(editor.file_path)
+        if not start_dir or not os.path.isdir(start_dir):
+            start_dir = os.path.expanduser("~")
+
+        path = QFileDialog.getExistingDirectory(self, t("Chọn thư mục"), start_dir)
+        if path:
+            self._show_folder_tree(path)
+
+    def _show_folder_tree(self, path):
+        path = os.path.abspath(path)
+        if not os.path.isdir(path):
+            QMessageBox.warning(self, t("Không mở được thư mục"), path)
+            return
+
+        root_index = self.folder_model.setRootPath(path)
+        self.folder_tree.setRootIndex(root_index)
+        self.folder_tree.expand(root_index)
+        self.folder_tree_label.setText(os.path.basename(path) or path)
+        self.folder_tree_label.setToolTip(path)
+        self.folder_tree_host.setVisible(True)
+        self.left_splitter.setVisible(True)
+        self.editor_config["ui_folder_tree_visible"] = True
+        self.editor_config["ui_folder_tree_path"] = path
+        self._apply_folder_tree_sizes()
+        self.status_msg.setText(t("Đã mở thư mục: {path}", path=path))
+
+    def _hide_folder_tree(self):
+        self.folder_tree_host.setVisible(False)
+        self.editor_config["ui_folder_tree_visible"] = False
+
+    def _apply_folder_tree_sizes(self):
+        sizes = self.left_splitter.sizes()
+        palette = sizes[0] if len(sizes) > 0 and self.symbol_palette.isVisible() else 0
+        folder = sizes[1] if len(sizes) > 1 else 0
+        ai = sizes[2] if len(sizes) > 2 and self.ai_panel_host.isVisible() else 0
+        if self.folder_tree_host.isVisible() and folder < 180:
+            folder = 260
+        if self.symbol_palette.isVisible() and palette < 180:
+            palette = 420
+        if self.ai_panel_host.isVisible() and ai < 160:
+            ai = 220
+        self.left_splitter.setSizes([palette, folder, ai])
+
+        main_sizes = self.main_splitter.sizes()
+        if main_sizes and main_sizes[0] < 320:
+            self.main_splitter.setSizes([
+                360,
+                max(520, main_sizes[1]),
+                main_sizes[2] if len(main_sizes) > 2 else 520,
+            ])
+
+    def _on_folder_tree_double_clicked(self, index):
+        path = self.folder_model.filePath(index)
+        if not path:
+            return
+        if os.path.isdir(path):
+            self.folder_tree.setExpanded(index, not self.folder_tree.isExpanded(index))
+            return
+        if os.path.splitext(path)[1].lower() in self._DROP_EXTENSIONS:
+            self._open_specific_file(path)
+        else:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
     def _open_specific_file(self, path):
         path = os.path.abspath(path)
@@ -1310,6 +1452,9 @@ class EmexWindow(QMainWindow):
         base = os.path.dirname(editor.file_path) if editor.file_path else ""
         self.preview.render(editor.toPlainText(), base_url=base, mode="full")
 
+    def _render_preview_source(self, source, base):
+        self.preview.render(source, base_url=base, mode="full")
+
     def _do_render_current_block(self):
         editor = self._cur_editor()
         if not editor:
@@ -1339,15 +1484,70 @@ class EmexWindow(QMainWindow):
         return True
 
     def _compile_preview(self):
+        editor = self._cur_editor()
+        if not editor:
+            return
+        source = editor.toPlainText()
+        base = os.path.dirname(editor.file_path) if editor.file_path else ""
+        target_language = self.preview.translation_language()
+        translation_tool = self.preview.translation_tool()
+
         self.preview.set_compiling(True)
-        self.status_msg.setText(t("Đang biên dịch xem trước..."))
-        self._do_render_preview()
+        if target_language == "none":
+            self.status_msg.setText(t("Đang biên dịch xem trước..."))
+            self._render_preview_source(source, base)
 
-        def finish():
+            def finish():
+                self.preview.set_compiling(False)
+                self.status_msg.setText(t("Đã biên dịch xem trước."))
+
+            QTimer.singleShot(1400, finish)
+            return
+
+        language_label = self.preview.translation_language_label()
+        self.status_msg.setText(t("Đang dịch sang {language} và biên dịch...",
+                                  language=language_label))
+
+        def work():
+            return translate_markdown(
+                source,
+                target_language,
+                translation_tool,
+                gemini_api_key=load_api_key(),
+                gemini_model=self.editor_config.get("gemini_model", "gemini-2.5-flash"),
+            )
+
+        def on_done(translated_source):
+            self._render_preview_source(translated_source, base)
+            self.status_msg.setText(
+                t("Đã dịch sang {language} và biên dịch xem trước.",
+                  language=language_label))
+
+            def finish():
+                self.preview.set_compiling(False)
+
+            QTimer.singleShot(1400, finish)
+
+        def on_error(message):
             self.preview.set_compiling(False)
-            self.status_msg.setText(t("Đã biên dịch xem trước."))
+            self.status_msg.setText(
+                t("Lỗi dịch sang {language}: {message}",
+                  language=language_label, message=message))
+            self._toast(t("Lỗi dịch sang {language}: {message}",
+                          language=language_label, message=message),
+                        kind="error", duration_ms=6000)
 
-        QTimer.singleShot(1400, finish)
+        run_async(self, work, on_done=on_done, on_error=on_error)
+
+    def _on_compile_translation_tool_changed(self, _index):
+        tool = normalize_translation_tool(self.preview.translation_tool())
+        self.editor_config["compile_translate_tool"] = tool
+        save_editor_config(self.editor_config)
+
+    def _on_compile_translation_language_changed(self, _index):
+        language = normalize_compile_language(self.preview.translation_language())
+        self.editor_config["compile_translate_language"] = language
+        save_editor_config(self.editor_config)
 
     def _current_markdown_block(self, editor):
         lines = editor.toPlainText().split("\n")
@@ -1550,10 +1750,37 @@ class EmexWindow(QMainWindow):
     # =====================================================================
     # AI
     # =====================================================================
+    def _set_ai_toggle_checked(self, checked):
+        self.act_toggle_ai.blockSignals(True)
+        self.act_toggle_ai.setChecked(checked)
+        self.act_toggle_ai.blockSignals(False)
+
+    def _toggle_ai_compact(self, checked):
+        if checked:
+            self._show_ai_panel()
+        else:
+            self._hide_ai_panel()
+
     def trigger_ai_assistant(self):
+        if self.ai_chat_widget is not None and not self.ai_panel_host.isHidden():
+            self._undock_ai_panel()
+            return
         dlg = AIQuickDialog(self)
         if dlg.exec() and dlg.action_taken == "dock":
             self._show_ai_panel(dlg.take_chat_widget())
+
+    def _apply_ai_panel_sizes(self):
+        sizes = self.left_splitter.sizes()
+        palette = sizes[0] if len(sizes) > 0 and self.symbol_palette.isVisible() else 0
+        folder = sizes[1] if len(sizes) > 1 and self.folder_tree_host.isVisible() else 0
+        if self.symbol_palette.isVisible() and palette < 180:
+            palette = 420
+        if self.folder_tree_host.isVisible() and folder < 180:
+            folder = 260
+        self.left_splitter.setSizes([palette, folder, 240])
+        sizes = self.main_splitter.sizes()
+        if sizes and sizes[0] < 320:
+            self.main_splitter.setSizes([340, max(520, sizes[1]), sizes[2] if len(sizes) > 2 else 520])
 
     def _show_ai_panel(self, widget=None):
         if self.ai_chat_widget is not None and self.ai_chat_widget is not widget:
@@ -1563,6 +1790,7 @@ class EmexWindow(QMainWindow):
         if widget is None:
             widget = AIChatWidget(self, compact=True)
         widget.set_compact(True)
+        self.left_splitter.setVisible(True)
         try:
             widget.undock_requested.disconnect(self._undock_ai_panel)
         except Exception:
@@ -1576,16 +1804,16 @@ class EmexWindow(QMainWindow):
         self.ai_chat_widget = widget
         self.ai_panel_layout.addWidget(widget)
         self.ai_panel_host.setVisible(True)
+        self.ai_panel_host.setMinimumHeight(160)
         self.editor_config["ui_ai_state"] = "compact"
-        self.left_splitter.setSizes([620, 300])
-        sizes = self.main_splitter.sizes()
-        if sizes and sizes[0] < 320:
-            self.main_splitter.setSizes([340, max(520, sizes[1]), sizes[2] if len(sizes) > 2 else 520])
+        self._set_ai_toggle_checked(True)
+        self._apply_ai_panel_sizes()
         widget.input_edit.setFocus()
 
     def _hide_ai_panel(self):
         self.ai_panel_host.setVisible(False)
         self.editor_config["ui_ai_state"] = "closed"
+        self._set_ai_toggle_checked(False)
         if self.ai_chat_widget is not None:
             widget = self.ai_chat_widget
             self.ai_chat_widget = None
@@ -1601,6 +1829,7 @@ class EmexWindow(QMainWindow):
         self.ai_panel_layout.removeWidget(widget)
         self.ai_panel_host.setVisible(False)
         self.editor_config["ui_ai_state"] = "closed"
+        self._set_ai_toggle_checked(False)
         widget.setParent(None)
         try:
             widget.undock_requested.disconnect(self._undock_ai_panel)
@@ -1648,15 +1877,25 @@ class EmexWindow(QMainWindow):
         self.act_toggle_preview.setChecked(preview_visible)
         self.act_toggle_preview.blockSignals(False)
 
+        folder_path = self.editor_config.get("ui_folder_tree_path", "")
+        if self.editor_config.get("ui_folder_tree_visible", False) and os.path.isdir(folder_path):
+            self._show_folder_tree(folder_path)
+        else:
+            self.folder_tree_host.setVisible(False)
+
         if self.editor_config.get("ui_ai_state") == "compact" and self.ai_chat_widget is None:
             self._show_ai_panel()
+        else:
+            self._set_ai_toggle_checked(False)
 
         main_sizes = self.editor_config.get("ui_main_splitter_sizes", [])
         if self._valid_splitter_sizes(main_sizes, 3):
             self.main_splitter.setSizes(main_sizes)
         left_sizes = self.editor_config.get("ui_left_splitter_sizes", [])
-        if self._valid_splitter_sizes(left_sizes, 2):
+        if self._valid_splitter_sizes(left_sizes, 3):
             self.left_splitter.setSizes(left_sizes)
+        elif self._valid_splitter_sizes(left_sizes, 2):
+            self.left_splitter.setSizes([left_sizes[0], 0, left_sizes[1]])
 
         if self.editor_config.get("ui_zen_enabled", False):
             self.act_zen.setChecked(True)
@@ -1664,8 +1903,10 @@ class EmexWindow(QMainWindow):
     def _save_ui_state(self):
         self.editor_config["ui_preview_visible"] = self.preview.isVisible()
         self.editor_config["ui_palette_visible"] = self.symbol_palette.isVisible()
+        self.editor_config["ui_folder_tree_visible"] = self.folder_tree_host.isVisible()
+        self.editor_config["ui_folder_tree_path"] = self.editor_config.get("ui_folder_tree_path", "")
         self.editor_config["ui_ai_state"] = (
-            "compact" if self.ai_chat_widget is not None and self.ai_panel_host.isVisible()
+            "compact" if self.ai_chat_widget is not None and not self.ai_panel_host.isHidden()
             else "closed"
         )
         self.editor_config["ui_main_splitter_sizes"] = self.main_splitter.sizes()
@@ -1690,11 +1931,16 @@ class EmexWindow(QMainWindow):
     def _toggle_palette(self, on):
         self.symbol_palette.setVisible(on)
         self.editor_config["ui_palette_visible"] = on
+        if self.ai_chat_widget is not None and self.ai_panel_host.isVisible():
+            self._apply_ai_panel_sizes()
+        elif self.folder_tree_host.isVisible():
+            self._apply_folder_tree_sizes()
 
     def _toggle_zen(self, on):
         if on:
             self.toolbar.setVisible(False)
             self.symbol_palette.setVisible(False)
+            self.folder_tree_host.setVisible(False)
             self.preview.setVisible(False)
             self.statusBar().setVisible(False)
             self.act_toggle_palette.setChecked(False)
@@ -1702,6 +1948,8 @@ class EmexWindow(QMainWindow):
         else:
             self.toolbar.setVisible(True)
             self.symbol_palette.setVisible(True)
+            if self.editor_config.get("ui_folder_tree_visible", False):
+                self.folder_tree_host.setVisible(True)
             self.preview.setVisible(True)
             self.statusBar().setVisible(True)
             self.act_toggle_palette.setChecked(True)
@@ -1744,6 +1992,7 @@ class EmexWindow(QMainWindow):
 
         self.act_new.setText(t("Trang trống (Ctrl+N)"))
         self.act_open.setText(t("Mở (Ctrl+O)"))
+        self.act_open_folder.setText(t("Mở thư mục"))
         self.act_save.setText(t("Lưu (Ctrl+S)"))
         self.act_save_as.setText(t("Lưu thành... (Ctrl+Shift+S)"))
         self.act_bold.setText(t("In đậm (Ctrl+B)"))
@@ -1763,6 +2012,7 @@ class EmexWindow(QMainWindow):
         self.act_replace.setText(t("Thay (Ctrl+H)"))
         self.act_render.setText(t("Biên dịch xem trước (Ctrl+Enter)"))
         self.act_ai.setText(t("Trợ lý eMeX (Ctrl+G)"))
+        self.act_toggle_ai.setText(t("Bật/Tắt nhanh Trợ lý eMeX"))
         self.act_toggle_preview.setText(t("Bật/Tắt xem trước (Ctrl+P)"))
         self.act_toggle_palette.setText(t("Bật/Tắt bảng ký hiệu"))
         self.act_zen.setText(t("Chế độ tập trung (F11)"))
@@ -1771,11 +2021,14 @@ class EmexWindow(QMainWindow):
         self.act_about.setToolTip(t("Giới thiệu"))
 
         self.btn_new.setToolTip(t("Tạo trang Markdown mới từ trang trống hoặc mẫu"))
-        self.btn_open.setToolTip(t("Mở tệp Markdown / tệp gần đây"))
+        self.btn_open.setToolTip(t("Mở tệp Markdown / thư mục / tệp gần đây"))
         self.btn_save.setToolTip(t("Lưu tệp Markdown hiện tại (Ctrl+S)"))
         self.btn_insert.setToolTip(t("Chèn nội dung"))
         self.btn_tools.setToolTip(t("Công cụ soạn thảo"))
         self.btn_view.setToolTip(t("Tùy chọn hiển thị"))
+        if not self.editor_config.get("ui_folder_tree_path", ""):
+            self.folder_tree_label.setText(t("Cây thư mục"))
+        self.btn_close_folder_tree.setToolTip(t("Ẩn cây thư mục"))
         self.preview.retranslate_ui()
         self.symbol_palette.retranslate_ui()
         if self.ai_chat_widget is not None:

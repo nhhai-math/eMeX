@@ -318,6 +318,8 @@ class TypingBubble(QFrame):
 class AttachmentCard(QFrame):
     """Preview một ảnh hoặc tệp văn bản đã dán vào chat."""
 
+    remove_requested = pyqtSignal(str, str)  # kind, path
+
     def __init__(self, kind, path, parent=None):
         super().__init__(parent)
         self.kind = kind
@@ -333,6 +335,23 @@ class AttachmentCard(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(7, 7, 7, 7)
         layout.setSpacing(4)
+
+        top = QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
+        top.addStretch()
+        btn_remove = QPushButton("×")
+        btn_remove.setFixedSize(22, 22)
+        btn_remove.setToolTip(t("Xóa đính kèm"))
+        btn_remove.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_remove.setStyleSheet(
+            "QPushButton{background:#fee2e2;color:#991b1b;border:1px solid #fecaca;"
+            "border-radius:11px;font-weight:700;padding:0;}"
+            "QPushButton:hover{background:#ef4444;color:#ffffff;border-color:#dc2626;}"
+        )
+        btn_remove.clicked.connect(
+            lambda _checked=False: self.remove_requested.emit(self.kind, self.path))
+        top.addWidget(btn_remove)
+        layout.addLayout(top)
 
         if kind == "image":
             preview = QLabel()
@@ -716,13 +735,15 @@ class AIChatWidget(QWidget):
             if widget is not None:
                 widget.deleteLater()
         for path in self.pending_text_files:
+            card = AttachmentCard("text", path, self.attachment_strip)
+            card.remove_requested.connect(self._remove_pending_attachment)
             self.attachment_layout.insertWidget(
-                self.attachment_layout.count() - 1,
-                AttachmentCard("text", path, self.attachment_strip))
+                self.attachment_layout.count() - 1, card)
         for path in self.pending_images:
+            card = AttachmentCard("image", path, self.attachment_strip)
+            card.remove_requested.connect(self._remove_pending_attachment)
             self.attachment_layout.insertWidget(
-                self.attachment_layout.count() - 1,
-                AttachmentCard("image", path, self.attachment_strip))
+                self.attachment_layout.count() - 1, card)
         has_attachments = bool(self.pending_images or self.pending_text_files)
         self.attachment_strip.setVisible(has_attachments)
         if not has_attachments:
@@ -732,6 +753,20 @@ class AIChatWidget(QWidget):
         self.attach_label.setText(t("Đính kèm: {count} mục", count=total))
 
     def _refresh_attach_label(self):
+        self._refresh_attachments()
+
+    def _remove_pending_attachment(self, kind, path):
+        if kind == "image":
+            if path in self.pending_images:
+                self.pending_images.remove(path)
+        elif kind == "text":
+            if path in self.pending_text_files:
+                self.pending_text_files.remove(path)
+        if path.startswith(CONFIG_DIR) and os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
         self._refresh_attachments()
 
     def _attach_image(self):
@@ -819,13 +854,16 @@ class AIChatWidget(QWidget):
             value for value in (self.width(), self.chat_scroll.viewport().width())
             if value and value > 0
         ]
-        viewport_width = min(widths) if widths else self.MAX_BUBBLE_WIDTH
+        viewport_width = min(widths) if widths else ChatBubble.MAX_BUBBLE_WIDTH
         # Trừ avatar, spacing, margins và scrollbar để bubble không bị cắt ở panel hẹp.
         return max(160, viewport_width - 74)
 
     def _fit_chat_bubble(self, bubble):
         if isinstance(bubble, ChatBubble):
-            bubble.set_available_width(self._available_bubble_width())
+            try:
+                bubble.set_available_width(self._available_bubble_width())
+            except Exception:
+                bubble.set_available_width(ChatBubble.MAX_BUBBLE_WIDTH)
 
     def _fit_all_chat_bubbles(self):
         for i in range(self.chat_layout.count()):

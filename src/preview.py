@@ -3,15 +3,23 @@ import re
 import html
 import json
 import os
+import sys
+import threading
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
-from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QToolBar,
-                              QToolButton, QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QPushButton,
+                              QToolBar, QToolButton, QVBoxLayout, QWidget)
 from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
+from .config import ROOT_DIR
 from .i18n import t
 from .text_normalizer import normalize_markdown_for_compile
+from .translation import (COMPILE_TRANSLATION_LANGUAGES, COMPILE_TRANSLATION_TOOLS,
+                          compile_language_label, normalize_compile_language,
+                          normalize_translation_tool, translation_tool_label)
 
 
 try:
@@ -123,8 +131,89 @@ mjx-container[jax="SVG"][display="true"] {
 """
 
 
+_TIKZJAX_HTTPD = None
+_TIKZJAX_BASE_URL = ""
+_TIKZJAX_LOCK = threading.Lock()
+
+
+class _TikzJaxAssetHandler(SimpleHTTPRequestHandler):
+    extensions_map = {
+        **SimpleHTTPRequestHandler.extensions_map,
+        ".gz": "application/gzip",
+        ".ttf": "font/ttf",
+        ".wasm": "application/wasm",
+    }
+
+    def end_headers(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        super().end_headers()
+
+    def log_message(self, _format, *args):
+        return
+
+    def handle(self):
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+            return
+
+
+def _tikzjax_asset_root():
+    candidates = [os.path.join(ROOT_DIR, "vendor", "tikzjax")]
+    meipass = getattr(sys, "_MEIPASS", "")
+    if meipass:
+        candidates.append(os.path.join(meipass, "vendor", "tikzjax"))
+    if getattr(sys, "frozen", False):
+        exe_dir = os.path.dirname(sys.executable)
+        candidates.extend([
+            os.path.join(exe_dir, "vendor", "tikzjax"),
+            os.path.join(exe_dir, "_internal", "vendor", "tikzjax"),
+        ])
+
+    for path in candidates:
+        js_path = os.path.join(path, "v1", "tikzjax.js")
+        if os.path.exists(js_path):
+            return path
+    return ""
+
+
+def _ensure_tikzjax_server():
+    global _TIKZJAX_HTTPD, _TIKZJAX_BASE_URL
+    if _TIKZJAX_BASE_URL:
+        return _TIKZJAX_BASE_URL
+
+    with _TIKZJAX_LOCK:
+        if _TIKZJAX_BASE_URL:
+            return _TIKZJAX_BASE_URL
+        root = _tikzjax_asset_root()
+        if not root:
+            return ""
+        handler = partial(_TikzJaxAssetHandler, directory=root)
+        try:
+            httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        except OSError:
+            return ""
+        thread = threading.Thread(
+            target=httpd.serve_forever,
+            name="eMeX TikZJax assets",
+            daemon=True,
+        )
+        thread.start()
+        _TIKZJAX_HTTPD = httpd
+        _TIKZJAX_BASE_URL = f"http://127.0.0.1:{httpd.server_port}"
+        return _TIKZJAX_BASE_URL
+
+
 def _mathjax_head(title=None):
     title = title or t("Xem trước")
+    tikz_base = _ensure_tikzjax_server()
+    if tikz_base:
+        tikz_assets = (
+            f'<link rel="stylesheet" href="{html.escape(tikz_base, quote=True)}/v1/fonts.css">\n'
+            f'<script src="{html.escape(tikz_base, quote=True)}/v1/tikzjax.js"></script>'
+        )
+    else:
+        tikz_assets = "<script>window.__emexTikzLocalMissing = true;</script>"
     return f"""<!doctype html>
 <html><head>
 <meta charset="utf-8">
@@ -146,8 +235,7 @@ window.MathJax = {{
 }};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
-<link rel="stylesheet" href="https://tikzjax.com/v1/fonts.css">
-<script src="https://tikzjax.com/v1/tikzjax.js"></script>
+{tikz_assets}
 <style>{HTML_BASE_CSS}</style>
 </head><body>
 """
@@ -219,9 +307,9 @@ async function waitForTikz(timeoutMs){
   }
   refreshTikzStatus();
   if (blocks.every(block => block.querySelector('svg'))) return;
-  const message = tikzEngineReady()
-    ? '__TIKZ_TIMEOUT__'
-    : '__TIKZ_LOAD_ERROR__';
+  const message = window.__emexTikzLocalMissing
+    ? '__TIKZ_LOCAL_MISSING__'
+    : (tikzEngineReady() ? '__TIKZ_TIMEOUT__' : '__TIKZ_LOAD_ERROR__');
   setTikzError(message);
   throw new Error(message);
 }
@@ -246,7 +334,8 @@ renderAll();
 </body></html>
 """
     tail = tail.replace("__TIKZ_TIMEOUT__", t("TikZ kết xuất quá lâu hoặc mã TikZ có lỗi."))
-    tail = tail.replace("__TIKZ_LOAD_ERROR__", t("Không tải được TikZJax. Kiểm tra kết nối mạng hoặc quyền tải CDN."))
+    tail = tail.replace("__TIKZ_LOCAL_MISSING__", t("Thiếu TikZJax local. Kiểm tra thư mục vendor/tikzjax."))
+    tail = tail.replace("__TIKZ_LOAD_ERROR__", t("Không tải được TikZJax local. Kiểm tra dịch vụ nội bộ hoặc thư mục vendor/tikzjax."))
     return "\n" + sync_script + tail
 
 
@@ -657,6 +746,9 @@ class PreviewPane(QWidget):
             "QToolBar QToolButton{background:#ffffff;color:#0f172a;border:1px solid #d1d5db;"
             "padding:4px 8px;border-radius:6px;margin:0 2px;min-width:28px;}"
             "QToolBar QToolButton:hover{background:#eff6ff;border-color:#2563eb;color:#1d4ed8;}"
+            "QToolBar QComboBox{background:#ffffff;color:#0f172a;border:1px solid #d1d5db;"
+            "padding:4px 8px;border-radius:6px;margin:0 2px;min-width:64px;}"
+            "QToolBar QComboBox:hover{border-color:#2563eb;}"
             "QToolBar QPushButton#compileButton{background:#2563eb;color:#ffffff;"
             "border:1px solid #2563eb;font-weight:700;padding:5px 10px;}"
             "QToolBar QPushButton#compileButton:hover{background:#1d4ed8;border-color:#1d4ed8;color:#ffffff;}"
@@ -666,6 +758,16 @@ class PreviewPane(QWidget):
         self.btn_compile = QPushButton("▶ " + t("Biên dịch"))
         self.btn_compile.setObjectName("compileButton")
         self.btn_compile.setToolTip(t("Biên dịch xem trước (Ctrl+Enter)"))
+        self.translate_tool_combo = QComboBox()
+        for code, label in COMPILE_TRANSLATION_TOOLS:
+            self.translate_tool_combo.addItem(label, code)
+        self.translate_tool_combo.setToolTip(t("Công cụ dịch khi biên dịch"))
+        self.translate_tool_combo.setFixedWidth(132)
+        self.translate_combo = QComboBox()
+        for code, label in COMPILE_TRANSLATION_LANGUAGES:
+            self.translate_combo.addItem(label, code)
+        self.translate_combo.setToolTip(t("Ngôn ngữ dịch khi biên dịch"))
+        self.translate_combo.setFixedWidth(78)
         self.btn_export = QToolButton()
         self.btn_export.setText("📤")
         self.btn_export.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
@@ -688,6 +790,8 @@ class PreviewPane(QWidget):
         self._spinner_timer.timeout.connect(self._advance_compile_spinner)
 
         self.toolbar.addWidget(self.btn_compile)
+        self.toolbar.addWidget(self.translate_tool_combo)
+        self.toolbar.addWidget(self.translate_combo)
         self.toolbar.addWidget(self.btn_export)
         self.toolbar.addSeparator()
         self.toolbar.addWidget(self.btn_zoom_out)
@@ -719,7 +823,31 @@ class PreviewPane(QWidget):
     def scroll_to_source_line(self, line):
         self.web.scroll_to_source_line(line)
 
+    def translation_tool(self):
+        return normalize_translation_tool(self.translate_tool_combo.currentData())
+
+    def translation_tool_label(self):
+        return translation_tool_label(self.translation_tool())
+
+    def set_translation_tool(self, tool):
+        tool = normalize_translation_tool(tool)
+        index = self.translate_tool_combo.findData(tool)
+        self.translate_tool_combo.setCurrentIndex(index if index >= 0 else 0)
+
+    def translation_language(self):
+        return normalize_compile_language(self.translate_combo.currentData())
+
+    def translation_language_label(self):
+        return compile_language_label(self.translation_language())
+
+    def set_translation_language(self, language):
+        language = normalize_compile_language(language)
+        index = self.translate_combo.findData(language)
+        self.translate_combo.setCurrentIndex(index if index >= 0 else 0)
+
     def set_compiling(self, active):
+        self.translate_tool_combo.setEnabled(not active)
+        self.translate_combo.setEnabled(not active)
         if active:
             self._spinner_index = 0
             self.btn_compile.setEnabled(False)
@@ -735,6 +863,8 @@ class PreviewPane(QWidget):
         if not self._spinner_timer.isActive():
             self.btn_compile.setText("▶ " + t("Biên dịch"))
         self.btn_compile.setToolTip(t("Biên dịch xem trước (Ctrl+Enter)"))
+        self.translate_tool_combo.setToolTip(t("Công cụ dịch khi biên dịch"))
+        self.translate_combo.setToolTip(t("Ngôn ngữ dịch khi biên dịch"))
         self.btn_export.setToolTip(t("Xuất tài liệu"))
         self._refresh_mode_label()
 

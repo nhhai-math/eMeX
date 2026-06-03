@@ -6,7 +6,7 @@ import sys
 APP_NAME = "eMeX"
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 APP_ICON_FILE = os.path.join(ROOT_DIR, "docs", "assets", "icon_eMeX.png")
-APP_VERSION_FALLBACK = "2026.05.28.01"
+APP_VERSION_FALLBACK = "2026.06.03.01"
 
 
 def _read_app_version():
@@ -62,6 +62,8 @@ DEFAULT_EDITOR_CONFIG = {
     "show_line_numbers": True,
     "gemini_model": "gemini-2.5-flash",
     "gemini_models_cache": [],  # danh sách model đã tải về
+    "compile_translate_tool": "google",  # google | gemini
+    "compile_translate_language": "none",  # none | en | vi | zh-CN | ...
     "auto_save": False,
     # UI size settings
     "toolbar_icon_size": 22,        # kích thước icon trên toolbar (px)
@@ -70,7 +72,9 @@ DEFAULT_EDITOR_CONFIG = {
     "symbol_btn_font_size": 13,     # cỡ chữ nút bảng ký hiệu (pt)
     "ui_preview_visible": True,
     "ui_palette_visible": True,
-    "ui_ai_state": "closed",        # closed | compact
+    "ui_folder_tree_visible": False,
+    "ui_folder_tree_path": "",
+    "ui_ai_state": "compact",       # closed | compact
     "ui_main_splitter_sizes": [],
     "ui_left_splitter_sizes": [],
     "ui_window_geometry": [],

@@ -20,6 +20,17 @@ def _append_file_if_exists(items: list[tuple[str, str]], source: Path, destinati
         items.append((str(source), destination))
 
 
+def _append_tree_if_exists(items: list[tuple[str, str]], source: Path, destination: str) -> None:
+    if not source.exists():
+        return
+    for path in source.rglob("*"):
+        if not path.is_file():
+            continue
+        rel_dir = path.relative_to(source).parent
+        target = Path(destination) / rel_dir
+        items.append((str(path), str(target).replace("\\", "/")))
+
+
 def _read_app_version() -> str:
     version_file = ROOT / "VERSION"
     if version_file.exists():
@@ -124,6 +135,7 @@ datas += collect_data_files("certifi")
 _append_file_if_exists(datas, ROOT / "VERSION", ".")
 for asset_name in ("icon_eMeX.png", "icon_eMeX_256.png", "icon_eMeX.ico", "icon_eMeX.icns"):
     _append_file_if_exists(datas, ROOT / "docs" / "assets" / asset_name, "docs/assets")
+_append_tree_if_exists(datas, ROOT / "vendor" / "tikzjax", "vendor/tikzjax")
 
 bundle_icon = None
 if IS_WIN:
