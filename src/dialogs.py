@@ -133,6 +133,24 @@ class SettingsDialog(QDialog):
         self.cb_auto_save.setChecked(self.cfg.get("auto_save", False))
         form.addRow("", self.cb_auto_save)
 
+        display_group = QGroupBox(t("Hiển thị nội dung"))
+        display_group.setStyleSheet("""
+            QGroupBox {
+                font-weight:600; color:#1d4ed8;
+                border:1px solid #e5e7eb; border-radius:8px;
+                margin-top:14px; padding:14px 10px 10px 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin:margin; left:12px;
+                padding:0 6px; background:#ffffff;
+            }
+        """)
+        display_layout = QVBoxLayout(display_group)
+        self.cb_preview_justify = QCheckBox(t("Canh đều văn bản 2 bên trong khung xem trước"))
+        self.cb_preview_justify.setChecked(self.cfg.get("preview_justify_text", False))
+        display_layout.addWidget(self.cb_preview_justify)
+        form.addRow(display_group)
+
         # --- Nhóm kích thước giao diện ---
         size_group = QGroupBox(t("Kích thước thanh công cụ && biểu tượng"))
         size_group.setStyleSheet("""
@@ -154,14 +172,14 @@ class SettingsDialog(QDialog):
         self.spin_toolbar_icon.setRange(16, 48)
         self.spin_toolbar_icon.setSuffix(" px")
         self.spin_toolbar_icon.setValue(self.cfg.get("toolbar_icon_size", 22))
-        self.spin_toolbar_icon.setToolTip(t("Kích thước biểu tượng emoji trên thanh công cụ chính"))
+        self.spin_toolbar_icon.setToolTip(t("Kích thước biểu tượng trên cả hai thanh công cụ"))
         size_form.addRow(t("Cỡ biểu tượng thanh công cụ:"), self.spin_toolbar_icon)
 
         self.spin_toolbar_padding = QSpinBox()
         self.spin_toolbar_padding.setRange(2, 16)
         self.spin_toolbar_padding.setSuffix(" px")
         self.spin_toolbar_padding.setValue(self.cfg.get("toolbar_btn_padding", 6))
-        self.spin_toolbar_padding.setToolTip(t("Đệm bên trong mỗi nút trên thanh công cụ"))
+        self.spin_toolbar_padding.setToolTip(t("Khoảng cách quanh biểu tượng trên cả hai thanh công cụ"))
         size_form.addRow(t("Đệm nút thanh công cụ:"), self.spin_toolbar_padding)
 
         self.spin_symbol_size = QSpinBox()
@@ -314,6 +332,7 @@ class SettingsDialog(QDialog):
         self.cb_wrap.setChecked(self.cfg["wrap_lines"])
         self.cb_auto_pair.setChecked(self.cfg["auto_pair"])
         self.cb_auto_save.setChecked(self.cfg["auto_save"])
+        self.cb_preview_justify.setChecked(self.cfg["preview_justify_text"])
         self.spin_toolbar_icon.setValue(self.cfg["toolbar_icon_size"])
         self.spin_toolbar_padding.setValue(self.cfg["toolbar_btn_padding"])
         self.spin_symbol_size.setValue(self.cfg["symbol_btn_size"])
@@ -333,6 +352,7 @@ class SettingsDialog(QDialog):
         self.cfg["wrap_lines"] = self.cb_wrap.isChecked()
         self.cfg["auto_pair"] = self.cb_auto_pair.isChecked()
         self.cfg["auto_save"] = self.cb_auto_save.isChecked()
+        self.cfg["preview_justify_text"] = self.cb_preview_justify.isChecked()
         self.cfg["toolbar_icon_size"] = self.spin_toolbar_icon.value()
         self.cfg["toolbar_btn_padding"] = self.spin_toolbar_padding.value()
         self.cfg["symbol_btn_size"] = self.spin_symbol_size.value()

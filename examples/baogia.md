@@ -1,0 +1,30 @@
+### BẢNG CHI TIẾT CÁC CÔNG CỤ KHÔNG GIAN KÈM HƯỚNG DẪN THAO TÁC
+
+| STT | Tên công cụ cụ thể | Mô tả cách sử dụng trên giao diện eDraw | Đơn giá (VNĐ) |
+| --- | --- | --- | --- |
+| 1 | **Hình chóp đáy tam giác đều** | Chọn công cụ $\rightarrow$ Click giữ và kéo trên bảng để tạo diện tích đáy tam giác $\rightarrow$ Di chuột lên trên để chọn chiều cao đỉnh $\rightarrow$ Thả chuột (Phần mềm tự vẽ nét đứt cho trục và 2 cạnh khuất). | **30.000** |
+| 2 | **Hình chóp đáy tam giác có cạnh bên vuông góc đáy** | Chọn công cụ $\rightarrow$ Kéo thả để vẽ đáy $\rightarrow$ Click chọn 1 trong 3 đỉnh đáy làm chân đường vuông góc $\rightarrow$ Di chuột lên cao để chốt độ dài cạnh bên vuông góc. | **30.000** |
+| 3 | **Hình chóp đáy tam giác tổng quát (Xiên)** | Chọn công cụ $\rightarrow$ Kéo thả xác định 3 đỉnh đáy $\rightarrow$ Click một điểm bất kỳ ngoài mặt đáy để làm đỉnh $S$ (hệ thống tự tính toán góc khuất để chuyển nét đứt cho các cạnh tương ứng). | **30.000** |
+| 4 | **Hình chóp đáy tứ giác đều** | Chọn công cụ $\rightarrow$ Kéo chuột vẽ đáy hình bình hành (phối cảnh của hình vuông) $\rightarrow$ Phần mềm tự động xác định tâm đáy $O$, dựng đường thẳng đứng $\rightarrow$ Di chuột chọn độ cao đỉnh $S$. | **30.000** |
+| 5 | **Hình chóp đáy là hình bình hành** | Chọn công cụ $\rightarrow$ Kéo thả vẽ đáy hình bình hành $\rightarrow$ Click chọn vị trí đỉnh $S$ tự do trong không gian $\rightarrow$ Thả chuột để nối các cạnh bên. | **30.000** |
+| 6 | **Hình chóp đáy là hình chữ nhật** | Chọn công cụ $\rightarrow$ Nhập tỉ lệ dài/rộng ở thanh công cụ $\rightarrow$ Kéo thả vẽ đáy $\rightarrow$ Tùy chọn click vào một đỉnh đáy để dựng cạnh bên vuông góc hoặc kéo đỉnh $S$ tự do. | **30.000** |
+| 7 | **Hình chóp đáy là hình thoi** | Chọn công cụ $\rightarrow$ Kéo thả vẽ đáy $\rightarrow$ Phần mềm tự hiển thị 2 đường chéo vuông góc bằng nét đứt $\rightarrow$ Di chuột kéo đỉnh $S$ từ tâm giao điểm lên hoặc tùy ý. | **30.000** |
+| 8 | **Hình chóp đáy là hình thang** | Chọn công cụ $\rightarrow$ Nhập tỉ lệ Đáy lớn / Đáy nhỏ $\rightarrow$ Kéo chuột vẽ đáy hình thang phối cảnh $\rightarrow$ Di chuột chọn vị trí đỉnh $S$ và click để hoàn thành. | **30.000** |
+| 9 | **Hình chóp cụt đáy tam giác đều** | Chọn công cụ $\rightarrow$ Kéo thả vẽ đáy lớn tam giác đều $\rightarrow$ Di chuột lên cao để xác định chiều cao $\rightarrow$ Lăn con cuộn chuột (hoặc kéo thanh trượt) để phóng to/thu nhỏ tỉ lệ đáy nhỏ phía trên. | **30.000** |
+| 10 | **Hình chóp cụt đáy tam giác tổng quát** | Chọn công cụ $\rightarrow$ Kéo thả vẽ đáy lớn tam giác $\rightarrow$ Di chuột xác định độ cao và độ lệch của tầng đáy nhỏ $\rightarrow$ Nhập tỉ lệ thu nhỏ của đáy trên. | **30.000** |
+| 11 | **Hình chóp cụt đáy hình vuông (đều)** | Chọn công cụ $\rightarrow$ Kéo thả vẽ đáy lớn hình vuông $\rightarrow$ Kéo chuột lên cao để dựng thân chóp cụt $\rightarrow$ Nhập thông số hoặc kéo slider để thu hẹp/mở rộng diện tích đáy vuông phía trên. | **30.000** |
+| 12 | **Hình chóp cụt đáy hình chữ nhật** | Chọn công cụ $\rightarrow$ Kéo thả vẽ đáy lớn hình chữ nhật $\rightarrow$ Dựng chiều cao $\rightarrow$ Hệ thống tự động đồng dạng hóa để bóp tỉ lệ đáy trên theo đúng trục đồng quy của hình chóp góc. | **30.000** |
+| 13 | **Hình chóp cụt đáy hình thang** | Chọn công cụ $\rightarrow$ Kéo thả vẽ đáy lớn hình thang $\rightarrow$ Dựng chiều cao $\rightarrow$ Phần mềm tự động tạo đáy trên là hình thang đồng dạng thu nhỏ tương ứng. | **30.000** |
+| 14 | **Hình hộp chữ nhật** | Chọn công cụ $\rightarrow$ Click kéo chuột để tạo khung chữ nhật phẳng $\rightarrow$ Di chuột chéo một góc để đẩy khối thành hình hộp 3D (nhập nhanh 3 thông số $a, b, c$ trên thanh điều hướng nếu muốn chính xác). | **30.000** |
+| 15 | **Hình lập phương** | Chọn công cụ $\rightarrow$ Chỉ cần click và kéo chuột chéo, khối lập phương tự động nở đều 3 chiều theo đúng tỉ lệ phối cảnh xa gần, các cạnh tự động bằng nhau. | **30.000** |
+| 16 | **Hình hộp xiên tổng quát** | Chọn công cụ $\rightarrow$ Kéo thả vẽ mặt đáy là hình bình hành $\rightarrow$ Click kéo chuột theo hướng nghiêng tùy ý để dựng các cạnh bên xiên song song và bằng nhau. | **30.000** |
+| 17 | **Lăng trụ tam giác đứng** | Chọn công cụ $\rightarrow$ Kéo thả vẽ đáy tam giác bất kỳ $\rightarrow$ Di chuột thẳng đứng lên trên (hoặc xuống dưới) để tạo chiều cao $\rightarrow$ Click để chốt hình (các cạnh bên tự động song song và vuông góc đáy). | **30.000** |
+| 18 | **Lăng trụ tam giác xiên** | Chọn công cụ $\rightarrow$ Kéo thả vẽ đáy tam giác $\rightarrow$ Di chuột theo hướng chéo nghiêng bất kỳ để xác định độ nghiêng và chiều dài của cạnh bên. | **30.000** |
+| 19 | **Lăng trụ tứ giác đứng** | Chọn công cụ $\rightarrow$ Kéo thả vẽ đáy tứ giác (hình bình hành/chữ nhật...) $\rightarrow$ Di chuột thẳng đứng để tạo độ cao khối lăng trụ đứng. | **30.000** |
+| 20 | **Lăng trụ tứ giác xiên** | Chọn công cụ $\rightarrow$ Kéo thả vẽ đáy tứ giác $\rightarrow$ Di chuột lệch góc tự do để tạo độ xiên cho 4 cạnh bên (hệ thống tự động đồng bộ góc xiên của cả 4 cạnh). | **30.000** |
+| 21 | **Mặt nón tròn xoay** | Chọn công cụ $\rightarrow$ Kéo ngang để vẽ đáy elip $\rightarrow$ Di chuột lên trên để chọn độ cao đỉnh nón $\rightarrow$ Click để hoàn thành (đường biên elip phía sau tự động biến thành nét đứt). | **30.000** |
+| 22 | **Hình nón cụt** | Chọn công cụ $\rightarrow$ Kéo chuột vẽ đáy lớn elip $\rightarrow$ Kéo chuột lên cao để định chiều cao $\rightarrow$ Lăn cuộn chuột để tăng/giảm bán kính elip của đáy nhỏ phía trên. | **30.000** |
+| 23 | **Mặt trụ tròn xoay** | Chọn công cụ $\rightarrow$ Kéo ngang vẽ đáy elip dưới $\rightarrow$ Di chuột lên trên để kéo dãn chiều cao $\rightarrow$ Click để sinh ra đáy elip trên y hệt đáy dưới (nửa elip sau của đáy dưới tự chuyển nét đứt). | **30.000** |
+| 24 | **Mặt cầu** | Chọn công cụ $\rightarrow$ Click chọn tâm và kéo rộng ra để vẽ đường tròn biên $\rightarrow$ Phần mềm tự động vẽ thêm 1 đường elip ngang làm vĩ tuyến (nửa sau nét đứt) để tạo hiệu ứng khối cầu 3D. | **30.000** |
+| --- | --- | --- | --- |
+|  | **TỔNG CỘNG** | **24 công cụ cụ thể đồng giá** | **720.000 VNĐ** |

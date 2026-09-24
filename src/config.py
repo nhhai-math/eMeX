@@ -6,7 +6,7 @@ import sys
 APP_NAME = "eMeX"
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 APP_ICON_FILE = os.path.join(ROOT_DIR, "docs", "assets", "icon_eMeX.png")
-APP_VERSION_FALLBACK = "2026.06.03.01"
+APP_VERSION_FALLBACK = "2026.09.24.01"
 
 
 def _read_app_version():
@@ -65,6 +65,7 @@ DEFAULT_EDITOR_CONFIG = {
     "compile_translate_tool": "google",  # google | gemini
     "compile_translate_language": "none",  # none | en | vi | zh-CN | ...
     "auto_save": False,
+    "preview_justify_text": False,
     # UI size settings
     "toolbar_icon_size": 22,        # kích thước icon trên toolbar (px)
     "toolbar_btn_padding": 6,       # padding nút toolbar (px)
@@ -75,6 +76,7 @@ DEFAULT_EDITOR_CONFIG = {
     "ui_folder_tree_visible": False,
     "ui_folder_tree_path": "",
     "ui_ai_state": "compact",       # closed | compact
+    "ui_left_panel_index": 1,
     "ui_main_splitter_sizes": [],
     "ui_left_splitter_sizes": [],
     "ui_window_geometry": [],

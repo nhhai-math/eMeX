@@ -5,7 +5,7 @@ import os
 import shutil
 import sys
 
-from PyQt6.QtCore import QDir, QEvent, Qt, QRectF, QSize, QThread, QTimer, QUrl
+from PyQt6.QtCore import QDir, QEvent, QMimeData, Qt, QRectF, QSize, QThread, QTimer, QUrl
 from PyQt6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices,
                           QFileSystemModel, QFont, QIcon, QKeySequence,
                           QLinearGradient, QPainter, QPen, QImage, QPixmap,
@@ -26,30 +26,18 @@ from .config import (APP_ICON_FILE, APP_NAME, APP_VERSION, CONFIG_DIR,
 from .dialogs import AboutDialog, SettingsDialog
 from .editor import CodeEditor
 from .exporters import markdown_to_docx, markdown_to_html, markdown_to_latex
+from .github_panel import GitHubPanel
 from .i18n import t
 from .preview import PreviewPane
+from .project_explorer import ProjectExplorer
 from .symbol_palette import SymbolPalette
+from .toolbar_icons import toolbar_icon
 from .translation import (normalize_compile_language, normalize_translation_tool,
                           translate_markdown)
 from .workers import Toast, run_async
 
 
 IMAGE_FILE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}
-
-
-def emoji_icon(emoji, size=36):
-    pm = QPixmap(size, size)
-    pm.fill(Qt.GlobalColor.transparent)
-    p = QPainter(pm)
-    p.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
-    if sys.platform == "darwin":
-        font = QFont("Apple Color Emoji", int(size * 0.65))
-    else:
-        font = QFont("Segoe UI Emoji", int(size * 0.6))
-    p.setFont(font)
-    p.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, emoji)
-    p.end()
-    return QIcon(pm)
 
 
 def _vline():
@@ -108,6 +96,50 @@ class EmexWindow(QMainWindow):
             }}
             QToolBar QLabel{{color:#0f172a;background:transparent;padding:0 4px;}}
             QToolBar::separator{{background:#e2e8f0;width:1px;margin:6px 6px;}}
+            QToolBar#mainToolBar{{
+                background:#ffffff;border:0;border-bottom:1px solid #e5e7eb;
+                spacing:2px;padding:5px 8px;
+            }}
+            QToolBar#mainToolBar QToolButton{{
+                background:transparent;border:1px solid transparent;border-radius:8px;
+                padding:0;margin:0;color:#475569;
+            }}
+            QToolBar#mainToolBar QToolButton:hover{{background:#f1f5f9;color:#0f172a;}}
+            QToolBar#mainToolBar QToolButton:checked,
+            QToolBar#mainToolBar QToolButton:pressed{{
+                background:#dbeafe;color:#1d4ed8;border-color:#bfdbfe;
+            }}
+            QToolBar#mainToolBar QToolButton::menu-indicator{{image:none;width:0;}}
+            QToolBar#mainToolBar::separator{{background:#e2e8f0;width:1px;margin:6px 7px;}}
+            QTabWidget#leftRail::pane{{
+                background:#ffffff;border:0;border-right:1px solid #e5e7eb;
+            }}
+            QTabWidget#leftRail QTabBar::tab{{
+                background:#f8fafc;color:#94a3b8;padding:10px 2px;
+                min-width:32px;min-height:32px;border:0;border-right:1px solid #e5e7eb;
+            }}
+            QTabWidget#leftRail QTabBar::tab:hover{{background:#f1f5f9;color:#0f172a;}}
+            QTabWidget#leftRail QTabBar::tab:selected{{
+                background:#ffffff;color:#1d4ed8;border-right:2px solid #2563eb;
+            }}
+            QWidget#projectExplorer, QWidget#githubPanel{{
+                background:#f8fafc;color:#0f172a;
+            }}
+            QWidget#projectExplorer QPushButton, QWidget#githubPanel QPushButton{{
+                background:#ffffff;color:#334155;border:1px solid #cbd5e1;
+                border-radius:6px;padding:5px 8px;
+            }}
+            QWidget#projectExplorer QPushButton:hover,
+            QWidget#githubPanel QPushButton:hover{{
+                background:#eff6ff;color:#1d4ed8;border-color:#93c5fd;
+            }}
+            QTreeView#projectTree{{
+                background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;
+                color:#0f172a;outline:0;
+            }}
+            QTreeView#projectTree::item{{padding:4px 6px;min-height:22px;}}
+            QTreeView#projectTree::item:hover{{background:#f1f5f9;}}
+            QTreeView#projectTree::item:selected{{background:#dbeafe;color:#1d4ed8;}}
             QStatusBar{{background:#0f172a;color:#e2e8f0;}}
             QStatusBar QLabel{{color:#e2e8f0;background:transparent;padding:0 8px;}}
             QTabWidget::pane{{border:0;background:#ffffff;}}
@@ -180,45 +212,68 @@ class EmexWindow(QMainWindow):
             }
         """)
 
+        self.project_explorer = ProjectExplorer(self, self.editor_config)
+        self.project_explorer.file_open_requested.connect(self._open_specific_file)
+        self.project_explorer.root_changed.connect(self._on_project_root_changed)
+        self.project_explorer.github_requested.connect(self._open_github_dialog)
+        self.project_explorer.path_renamed.connect(self._on_project_path_renamed)
+        self.project_explorer.path_deleted.connect(self._on_project_path_deleted)
+        self.project_explorer.image_renamed.connect(self._on_project_image_renamed)
+
         self.symbol_palette = SymbolPalette(editor_config=self.editor_config)
         self.symbol_palette.snippet_clicked.connect(self._insert_snippet_to_current)
-        self.folder_tree_host = self._build_folder_tree()
-        self.folder_tree_host.setVisible(False)
+
+        self.ai_panel_host = QWidget()
+        self.ai_panel_layout = QVBoxLayout(self.ai_panel_host)
+        self.ai_panel_layout.setContentsMargins(0, 0, 0, 0)
+        self.ai_panel_layout.setSpacing(0)
+        self.ai_placeholder = QLabel(t("Trợ lý eMeX đang ở chế độ nhanh."))
+        self.ai_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.ai_placeholder.setWordWrap(True)
+        self.ai_placeholder.setStyleSheet("color:#64748b;padding:18px;background:#f8fafc;")
+        self.ai_panel_layout.addWidget(self.ai_placeholder, 1)
+        self.ai_chat_widget = None
+
+        self.github_panel = GitHubPanel(self)
+        self.github_panel.link_updated.connect(self._on_github_link_updated)
+
+        self.left_panel = QTabWidget()
+        self.left_panel.setObjectName("leftRail")
+        self.left_panel.setMinimumWidth(0)
+        self.left_panel.setMinimumSize(0, 0)
+        self.left_panel.setSizePolicy(QSizePolicy.Policy.Ignored,
+                                      QSizePolicy.Policy.Expanding)
+        self.left_panel.setTabPosition(QTabWidget.TabPosition.West)
+        self.left_panel.setIconSize(QSize(22, 22))
+        self.left_panel.addTab(self.project_explorer, toolbar_icon("folder-open"), "")
+        self.left_panel.setTabToolTip(0, t("Cây thư mục dự án"))
+        self.left_panel.addTab(self.symbol_palette, toolbar_icon("sigma"), "")
+        self.left_panel.setTabToolTip(1, t("Bật/Tắt bảng ký hiệu"))
+        self.left_panel.addTab(self.ai_panel_host, toolbar_icon("sparkles"), "")
+        self.left_panel.setTabToolTip(2, t("Trợ lý eMeX (Ctrl+G)"))
+        self.left_panel.addTab(self.github_panel, toolbar_icon("git-branch"), "")
+        self.left_panel.setTabToolTip(3, "GitHub")
+        self.left_panel.currentChanged.connect(self._on_left_panel_changed)
 
         self.preview = PreviewPane(self)
         self.preview.set_translation_tool(
             self.editor_config.get("compile_translate_tool", "google"))
         self.preview.set_translation_language(
             self.editor_config.get("compile_translate_language", "none"))
+        self.preview.set_justify_text(self.editor_config.get("preview_justify_text", False))
         self.preview.btn_compile.clicked.connect(self._compile_preview)
-        self.preview.translate_tool_combo.currentIndexChanged.connect(
-            self._on_compile_translation_tool_changed)
-        self.preview.translate_combo.currentIndexChanged.connect(
-            self._on_compile_translation_language_changed)
+        self.preview.translation_changed.connect(self._on_compile_translation_changed)
+        self.preview.copy_png_requested.connect(self._copy_png_to_clipboard)
+        self.preview.copy_pdf_requested.connect(self._copy_pdf_to_clipboard)
+        self.preview.quick_open_pdf_requested.connect(self._quick_open_pdf)
         self.preview.web.loadFinished.connect(lambda _ok: self.preview.set_compiling(False))
         self.preview.web.source_line_requested.connect(self._sync_editor_to_preview_line)
 
-        self.ai_panel_host = QWidget()
-        self.ai_panel_host.setVisible(False)
-        self.ai_panel_layout = QVBoxLayout(self.ai_panel_host)
-        self.ai_panel_layout.setContentsMargins(0, 0, 0, 0)
-        self.ai_panel_layout.setSpacing(0)
-        self.ai_chat_widget = None
-
-        self.left_splitter = QSplitter(Qt.Orientation.Vertical)
-        self.left_splitter.addWidget(self.symbol_palette)
-        self.left_splitter.addWidget(self.folder_tree_host)
-        self.left_splitter.addWidget(self.ai_panel_host)
-        self.left_splitter.setSizes([540, 0, 260])
-        self.left_splitter.setStretchFactor(0, 1)
-        self.left_splitter.setStretchFactor(1, 1)
-        self.left_splitter.setStretchFactor(2, 0)
-
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.main_splitter.addWidget(self.left_splitter)
+        self.main_splitter.addWidget(self.left_panel)
         self.main_splitter.addWidget(self.tabs)
         self.main_splitter.addWidget(self.preview)
-        self.main_splitter.setSizes([260, 600, 540])
+        self.main_splitter.setSizes([320, 600, 540])
         self.main_splitter.setStretchFactor(0, 0)
         self.main_splitter.setStretchFactor(1, 1)
         self.main_splitter.setStretchFactor(2, 1)
@@ -344,17 +399,17 @@ class EmexWindow(QMainWindow):
     # =====================================================================
     def _build_actions(self):
         # ---- File ----
-        self.act_new = QAction(emoji_icon("📄"), t("Trang trống (Ctrl+N)"), self)
+        self.act_new = QAction(toolbar_icon("file-plus"), t("Trang trống (Ctrl+N)"), self)
         self.act_new.triggered.connect(self._new_file)
 
-        self.act_open = QAction(emoji_icon("📂"), t("Mở (Ctrl+O)"), self)
+        self.act_open = QAction(toolbar_icon("folder-open"), t("Mở (Ctrl+O)"), self)
         self.act_open.setShortcut("Ctrl+O")
         self.act_open.triggered.connect(self._open_file)
 
-        self.act_open_folder = QAction(emoji_icon("🗂"), t("Mở thư mục"), self)
+        self.act_open_folder = QAction(toolbar_icon("folder-open"), t("Mở thư mục"), self)
         self.act_open_folder.triggered.connect(self._open_folder)
 
-        self.act_save = QAction(emoji_icon("💾"), t("Lưu (Ctrl+S)"), self)
+        self.act_save = QAction(toolbar_icon("save"), t("Lưu (Ctrl+S)"), self)
         self.act_save.setShortcut("Ctrl+S")
         self.act_save.triggered.connect(self._save_current)
 
@@ -366,55 +421,55 @@ class EmexWindow(QMainWindow):
         self.addAction(self.act_save_as)
 
         # ---- Format ----
-        self.act_bold = QAction(emoji_icon("𝐁"), t("In đậm (Ctrl+B)"), self)
+        self.act_bold = QAction(toolbar_icon("bold"), t("In đậm (Ctrl+B)"), self)
         self.act_bold.setShortcut("Ctrl+B")
         self.act_bold.triggered.connect(lambda: self._wrap_selection("bold"))
 
-        self.act_italic = QAction(emoji_icon("𝑰"), t("In nghiêng (Ctrl+I)"), self)
+        self.act_italic = QAction(toolbar_icon("italic"), t("In nghiêng (Ctrl+I)"), self)
         self.act_italic.setShortcut("Ctrl+I")
         self.act_italic.triggered.connect(lambda: self._wrap_selection("italic"))
 
-        self.act_strike = QAction(emoji_icon("S̶"), t("Gạch ngang"), self)
+        self.act_strike = QAction(toolbar_icon("strike"), t("Gạch ngang"), self)
         self.act_strike.triggered.connect(lambda: self._wrap_selection("strike"))
 
-        self.act_code = QAction(emoji_icon("⟨⟩"), t("Mã trong dòng"), self)
+        self.act_code = QAction(toolbar_icon("code"), t("Mã trong dòng"), self)
         self.act_code.triggered.connect(lambda: self._wrap_selection("code"))
 
-        self.act_inline_math = QAction(emoji_icon("∑"), t("Toán trong dòng (Ctrl+M)"), self)
+        self.act_inline_math = QAction(toolbar_icon("sigma"), t("Toán trong dòng (Ctrl+M)"), self)
         self.act_inline_math.setShortcut("Ctrl+M")
         self.act_inline_math.triggered.connect(self._inline_math)
 
-        self.act_block_math = QAction(emoji_icon("∫"), t("Toán khối (Ctrl+Shift+M)"), self)
+        self.act_block_math = QAction(toolbar_icon("integral"), t("Toán khối (Ctrl+Shift+M)"), self)
         self.act_block_math.setShortcut("Ctrl+Shift+M")
         self.act_block_math.triggered.connect(self._block_math)
 
         # ---- Insert ----
-        self.act_quote = QAction(emoji_icon("❝"), t("Trích dẫn"), self)
+        self.act_quote = QAction(toolbar_icon("quote"), t("Trích dẫn"), self)
         self.act_quote.triggered.connect(lambda: self._line_prefix("> "))
 
-        self.act_hr = QAction(emoji_icon("━"), t("Đường ngang"), self)
+        self.act_hr = QAction(toolbar_icon("minus"), t("Đường ngang"), self)
         self.act_hr.triggered.connect(
             lambda: self._cur_editor() and self._cur_editor().apply_snippet("\n---\n"))
 
-        self.act_link = QAction(emoji_icon("🔗"), t("Chèn liên kết"), self)
+        self.act_link = QAction(toolbar_icon("link"), t("Chèn liên kết"), self)
         self.act_link.triggered.connect(self._insert_link)
 
-        self.act_image = QAction(emoji_icon("🖼"), t("Chèn ảnh"), self)
+        self.act_image = QAction(toolbar_icon("image"), t("Chèn ảnh"), self)
         self.act_image.triggered.connect(self._insert_image)
 
-        self.act_table = QAction(emoji_icon("▦"), t("Bảng (Ctrl+T)"), self)
+        self.act_table = QAction(toolbar_icon("table"), t("Bảng (Ctrl+T)"), self)
         self.act_table.setShortcut("Ctrl+T")
         self.act_table.triggered.connect(self._insert_table)
 
-        self.act_codeblock = QAction(emoji_icon("⌨"), t("Khối mã"), self)
+        self.act_codeblock = QAction(toolbar_icon("code-square"), t("Khối mã"), self)
         self.act_codeblock.triggered.connect(self._insert_codeblock)
 
-        self.act_comment = QAction(emoji_icon("💬"), t("Bình luận HTML (Ctrl+/)"), self)
+        self.act_comment = QAction(toolbar_icon("comment"), t("Bình luận HTML (Ctrl+/)"), self)
         self.act_comment.setShortcut("Ctrl+/")
         self.act_comment.triggered.connect(self._toggle_comment_current)
 
         # ---- Tools ----
-        self.act_find = QAction(emoji_icon("🔍"), t("Tìm (Ctrl+F)"), self)
+        self.act_find = QAction(toolbar_icon("search"), t("Tìm (Ctrl+F)"), self)
         self.act_find.setShortcut("Ctrl+F")
         self.act_find.triggered.connect(self._show_find)
 
@@ -424,38 +479,47 @@ class EmexWindow(QMainWindow):
         self.act_replace.triggered.connect(self._show_find)
         self.addAction(self.act_replace)
 
-        self.act_render = QAction(emoji_icon("▶"), t("Biên dịch xem trước (Ctrl+Enter)"), self)
+        self.act_render = QAction(toolbar_icon("play"), t("Biên dịch xem trước (Ctrl+Enter)"), self)
         self.act_render.triggered.connect(self._compile_preview)
 
-        self.act_ai = QAction(emoji_icon("🤖"), t("Trợ lý eMeX (Ctrl+G)"), self)
+        self.act_github = QAction(toolbar_icon("git-branch"), t("GitHub"), self)
+        self.act_github.triggered.connect(self._open_github_dialog)
+
+        self.act_ai = QAction(toolbar_icon("sparkles"), t("Trợ lý eMeX (Ctrl+G)"), self)
         self.act_ai.setShortcut("Ctrl+G")
         self.act_ai.triggered.connect(self.trigger_ai_assistant)
-        self.act_toggle_ai = QAction(emoji_icon("🤖"), t("Bật/Tắt nhanh Trợ lý eMeX"), self)
+        self.act_toggle_ai = QAction(toolbar_icon("sparkles"), t("Bật/Tắt nhanh Trợ lý eMeX"), self)
         self.act_toggle_ai.setCheckable(True)
         self.act_toggle_ai.toggled.connect(self._toggle_ai_compact)
 
         # ---- View ----
-        self.act_toggle_preview = QAction(emoji_icon("👁"), t("Bật/Tắt xem trước (Ctrl+P)"), self)
+        self.act_toggle_preview = QAction(toolbar_icon("eye"), t("Bật/Tắt xem trước (Ctrl+P)"), self)
         self.act_toggle_preview.setShortcut("Ctrl+P")
         self.act_toggle_preview.setCheckable(True)
         self.act_toggle_preview.setChecked(True)
         self.act_toggle_preview.toggled.connect(self._toggle_preview)
 
-        self.act_toggle_palette = QAction(emoji_icon("∑"), t("Bật/Tắt bảng ký hiệu"), self)
+        self.act_toggle_palette = QAction(toolbar_icon("panel-left"), t("Ẩn/hiện sidebar"), self)
         self.act_toggle_palette.setCheckable(True)
         self.act_toggle_palette.setChecked(True)
         self.act_toggle_palette.toggled.connect(self._toggle_palette)
 
-        self.act_zen = QAction(emoji_icon("🧘"), t("Chế độ tập trung (F11)"), self)
+        self.act_preview_justify = QAction(t("Canh đều văn bản 2 bên"), self)
+        self.act_preview_justify.setCheckable(True)
+        self.act_preview_justify.setChecked(self.editor_config.get("preview_justify_text", False))
+        self.act_preview_justify.setToolTip(t("Canh đều các đoạn văn trong khung xem trước"))
+        self.act_preview_justify.toggled.connect(self._toggle_preview_justify)
+
+        self.act_zen = QAction(toolbar_icon("maximize"), t("Chế độ tập trung (F11)"), self)
         self.act_zen.setShortcut("F11")
         self.act_zen.setCheckable(True)
         self.act_zen.toggled.connect(self._toggle_zen)
 
         # ---- Settings ----
-        self.act_settings = QAction(emoji_icon("⚙"), t("Cài đặt"), self)
+        self.act_settings = QAction(toolbar_icon("settings"), t("Cài đặt"), self)
         self.act_settings.triggered.connect(self._open_settings)
 
-        self.act_about = QAction(emoji_icon("ℹ"), t("Giới thiệu"), self)
+        self.act_about = QAction(toolbar_icon("info"), t("Giới thiệu"), self)
         self.act_about.triggered.connect(self._open_about)
 
         # Các action nằm trong menu dropdown vẫn cần nhận shortcut khi menu đang đóng.
@@ -473,7 +537,8 @@ class EmexWindow(QMainWindow):
     def _build_toolbar(self):
         self._configure_preview_export_menu()
 
-        tb = QToolBar("Main")
+        tb = QToolBar("Main Toolbar")
+        tb.setObjectName("mainToolBar")
         tb.setMovable(False)
         tb.setFloatable(False)
         icon_sz = self.editor_config.get("toolbar_icon_size", 22)
@@ -483,66 +548,69 @@ class EmexWindow(QMainWindow):
         pad = self.editor_config.get("toolbar_btn_padding", 6)
         self._toolbar_pad = pad
 
-        # Group 1 – File
+        # Group 1 - File
         self.btn_new = QToolButton()
-        self.btn_new.setText("📄")
-        self.btn_new.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self.btn_new.setIcon(self.act_new.icon())
+        self.btn_new.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.btn_new.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.btn_new.setToolTip(t("Tạo trang Markdown mới từ trang trống hoặc mẫu"))
-        self.btn_new.setStyleSheet(
-            f"QToolButton{{padding:{pad}px 10px;border-radius:8px;color:#334155;font-size:13px;}}"
-            "QToolButton:hover{background:#eff6ff;color:#1d4ed8;}"
-            "QToolButton::menu-indicator{image:none;}")
+        self.btn_new.setCursor(Qt.CursorShape.PointingHandCursor)
         self._refresh_new_page_menu()
         tb.addWidget(self.btn_new)
+
         self.btn_open = QToolButton()
-        self.btn_open.setText("📂")
-        self.btn_open.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self.btn_open.setIcon(self.act_open.icon())
+        self.btn_open.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.btn_open.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.btn_open.setToolTip(t("Mở tệp Markdown / thư mục / tệp gần đây"))
-        self.btn_open.setStyleSheet(
-            f"QToolButton{{padding:{pad}px 10px;border-radius:8px;color:#334155;font-size:13px;}}"
-            "QToolButton:hover{background:#eff6ff;color:#1d4ed8;}"
-            "QToolButton::menu-indicator{image:none;}")
+        self.btn_open.setCursor(Qt.CursorShape.PointingHandCursor)
         self._refresh_recent_menu()
         tb.addWidget(self.btn_open)
-        self.btn_save = self._make_command_button(
-            "💾", t("Lưu tệp Markdown hiện tại (Ctrl+S)"), self.act_save)
+
+        self.btn_save = self._make_toolbar_action_button(self.act_save)
         tb.addWidget(self.btn_save)
 
-        tb.addWidget(_vline())
+        tb.addSeparator()
 
-        # Group 2 – Insert
-        self.btn_insert = self._make_action_menu_button("＋", t("Chèn nội dung"),
-            [self.act_image, self.act_table, self.act_codeblock])
-        tb.addWidget(self.btn_insert)
-        tb.addWidget(_vline())
+        # Group 2 - Format
+        for action in (self.act_bold, self.act_italic):
+            tb.addWidget(self._make_toolbar_action_button(action))
 
-        # Group 4 – Tools
-        self.btn_tools = self._make_action_menu_button("☰", t("Công cụ soạn thảo"),
-            [self.act_comment, self.act_find])
-        tb.addWidget(self.btn_tools)
-        tb.addWidget(_vline())
+        tb.addSeparator()
+
+        # Group 3 - Insert / Markdown
+        for action in (self.act_link, self.act_image, self.act_table,
+                       self.act_codeblock):
+            tb.addWidget(self._make_toolbar_action_button(action))
+
+        tb.addSeparator()
+
+        # Group 4 - Tools
+        for action in (self.act_comment, self.act_find, self.act_render, self.act_github):
+            btn = self._make_toolbar_action_button(action)
+            if action is self.act_github:
+                self.btn_github = btn
+            tb.addWidget(btn)
+        tb.addSeparator()
 
         # Spacer đẩy view/settings sang phải
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         tb.addWidget(spacer)
 
-        # Right side – View toggles
-        tb.addAction(self.act_toggle_ai)
-        tb.addWidget(_vline())
-        self.btn_view = self._make_action_menu_button("☷", t("Tùy chọn hiển thị"),
-            [self.act_toggle_ai, self.act_toggle_palette, self.act_toggle_preview, self.act_zen])
-        tb.addWidget(self.btn_view)
-        tb.addWidget(_vline())
+        # Right side - View toggles
+        for action in (self.act_toggle_palette, self.act_toggle_preview,
+                       self.act_toggle_ai, self.act_zen):
+            tb.addWidget(self._make_toolbar_action_button(action))
+        tb.addSeparator()
 
-        # Far right – Settings/About
-        tb.addAction(self.act_settings)
-        tb.addAction(self.act_about)
+        # Far right - Settings/About
+        tb.addWidget(self._make_toolbar_action_button(self.act_settings))
+        tb.addWidget(self._make_toolbar_action_button(self.act_about))
 
         self.addToolBar(tb)
         self.toolbar = tb
+        self._apply_toolbar_sizes()
 
     def _configure_preview_export_menu(self):
         self.btn_export = self.preview.btn_export
@@ -567,6 +635,19 @@ class EmexWindow(QMainWindow):
         export_menu.addSeparator()
         export_menu.addAction(act_open_last)
         self.btn_export.setMenu(export_menu)
+
+    def _make_toolbar_action_button(self, action):
+        """Create an icon-only toolbar button with an accessible hover tooltip."""
+        btn = QToolButton()
+        btn.setDefaultAction(action)
+        btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setAutoRaise(True)
+        tooltip = action.toolTip() or action.text()
+        if tooltip:
+            btn.setToolTip(tooltip)
+            btn.setStatusTip(tooltip)
+        return btn
 
     def _make_dropdown_button(self, text, tooltip, items):
         btn = QToolButton()
@@ -813,65 +894,129 @@ class EmexWindow(QMainWindow):
             start_dir = os.path.dirname(editor.file_path)
         if not start_dir or not os.path.isdir(start_dir):
             start_dir = os.path.expanduser("~")
-
-        path = QFileDialog.getExistingDirectory(self, t("Chọn thư mục"), start_dir)
-        if path:
-            self._show_folder_tree(path)
+        self.left_panel.setVisible(True)
+        self.left_panel.setCurrentWidget(self.project_explorer)
+        self.project_explorer.browse_folder(start_dir)
 
     def _show_folder_tree(self, path):
         path = os.path.abspath(path)
         if not os.path.isdir(path):
             QMessageBox.warning(self, t("Không mở được thư mục"), path)
             return
-
-        root_index = self.folder_model.setRootPath(path)
-        self.folder_tree.setRootIndex(root_index)
-        self.folder_tree.expand(root_index)
-        self.folder_tree_label.setText(os.path.basename(path) or path)
-        self.folder_tree_label.setToolTip(path)
-        self.folder_tree_host.setVisible(True)
-        self.left_splitter.setVisible(True)
+        self.project_explorer.set_root(path)
+        self.left_panel.setVisible(True)
+        self.left_panel.setCurrentWidget(self.project_explorer)
         self.editor_config["ui_folder_tree_visible"] = True
         self.editor_config["ui_folder_tree_path"] = path
-        self._apply_folder_tree_sizes()
+        self._ensure_left_panel_width(320)
         self.status_msg.setText(t("Đã mở thư mục: {path}", path=path))
 
     def _hide_folder_tree(self):
-        self.folder_tree_host.setVisible(False)
         self.editor_config["ui_folder_tree_visible"] = False
+        if hasattr(self, "left_panel"):
+            self.left_panel.setCurrentWidget(self.symbol_palette)
 
     def _apply_folder_tree_sizes(self):
-        sizes = self.left_splitter.sizes()
-        palette = sizes[0] if len(sizes) > 0 and self.symbol_palette.isVisible() else 0
-        folder = sizes[1] if len(sizes) > 1 else 0
-        ai = sizes[2] if len(sizes) > 2 and self.ai_panel_host.isVisible() else 0
-        if self.folder_tree_host.isVisible() and folder < 180:
-            folder = 260
-        if self.symbol_palette.isVisible() and palette < 180:
-            palette = 420
-        if self.ai_panel_host.isVisible() and ai < 160:
-            ai = 220
-        self.left_splitter.setSizes([palette, folder, ai])
+        self._ensure_left_panel_width(320)
 
-        main_sizes = self.main_splitter.sizes()
-        if main_sizes and main_sizes[0] < 320:
+    def _ensure_left_panel_width(self, width=320):
+        sizes = self.main_splitter.sizes()
+        if len(sizes) < 3 or not self.left_panel.isVisible():
+            return
+        if sizes[0] < width:
             self.main_splitter.setSizes([
-                360,
-                max(520, main_sizes[1]),
-                main_sizes[2] if len(main_sizes) > 2 else 520,
+                width,
+                max(520, sizes[1]),
+                sizes[2] if len(sizes) > 2 else 520,
             ])
 
     def _on_folder_tree_double_clicked(self, index):
-        path = self.folder_model.filePath(index)
-        if not path:
-            return
-        if os.path.isdir(path):
-            self.folder_tree.setExpanded(index, not self.folder_tree.isExpanded(index))
-            return
-        if os.path.splitext(path)[1].lower() in self._DROP_EXTENSIONS:
+        # Kept for compatibility with older saved signal bindings.
+        model = getattr(self.project_explorer, "model", None)
+        path = model.filePath(index) if model is not None else ""
+        if path:
             self._open_specific_file(path)
-        else:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+    def _on_left_panel_changed(self, index):
+        if index < 0:
+            return
+        self.editor_config["ui_left_panel_index"] = index
+        widget = self.left_panel.widget(index)
+        if widget is self.project_explorer:
+            self._update_project_explorer_context()
+        elif widget is self.github_panel:
+            self.github_panel.refresh_context(load_remote=False)
+
+    def _update_project_explorer_context(self):
+        if not hasattr(self, "project_explorer"):
+            return
+        editor = self._cur_editor()
+        file_path = getattr(editor, "file_path", "") if editor else ""
+        fallback = self.editor_config.get("ui_folder_tree_path", "")
+        self.project_explorer.set_context(file_path, fallback)
+
+    def _on_project_root_changed(self, root_path):
+        self.editor_config["ui_folder_tree_visible"] = True
+        self.editor_config["ui_folder_tree_path"] = root_path
+        if hasattr(self, "github_panel"):
+            self.github_panel.refresh_context(load_remote=False)
+
+    def _on_project_path_renamed(self, old_path, new_path):
+        old_abs = os.path.abspath(old_path)
+        new_abs = os.path.abspath(new_path)
+        for i in range(self.tabs.count()):
+            editor = self.tabs.widget(i)
+            file_path = getattr(editor, "file_path", "")
+            if not file_path:
+                continue
+            file_abs = os.path.abspath(file_path)
+            updated = ""
+            if os.path.normcase(file_abs) == os.path.normcase(old_abs):
+                updated = new_abs
+            elif os.path.isdir(new_abs) and file_abs.startswith(old_abs + os.sep):
+                updated = new_abs + file_abs[len(old_abs):]
+            if updated:
+                editor.file_path = updated
+                self._update_tab_title(i)
+        self._update_project_explorer_context()
+        if hasattr(self, "github_panel"):
+            self.github_panel.refresh_context(load_remote=False)
+
+    def _on_project_path_deleted(self, deleted_path):
+        deleted_abs = os.path.abspath(deleted_path)
+        for i in range(self.tabs.count() - 1, -1, -1):
+            editor = self.tabs.widget(i)
+            file_path = getattr(editor, "file_path", "")
+            if not file_path:
+                continue
+            file_abs = os.path.abspath(file_path)
+            if (os.path.normcase(file_abs) == os.path.normcase(deleted_abs)
+                    or file_abs.startswith(deleted_abs + os.sep)):
+                editor.file_path = ""
+                self._update_tab_title(i)
+        self._update_project_explorer_context()
+        if hasattr(self, "github_panel"):
+            self.github_panel.refresh_context(load_remote=False)
+
+    def _on_project_image_renamed(self, old_path, new_path):
+        for i in range(self.tabs.count()):
+            editor = self.tabs.widget(i)
+            file_path = getattr(editor, "file_path", "")
+            if not file_path:
+                continue
+            base = os.path.dirname(os.path.abspath(file_path))
+            old_rel = os.path.relpath(old_path, base).replace("\\", "/")
+            new_rel = os.path.relpath(new_path, base).replace("\\", "/")
+            text = editor.toPlainText()
+            updated = text.replace(old_rel, new_rel)
+            if updated != text:
+                cursor = editor.textCursor()
+                editor.blockSignals(True)
+                editor.setPlainText(updated)
+                editor.setTextCursor(cursor)
+                editor.blockSignals(False)
+                editor.document().setModified(True)
+                self._update_tab_title(i)
 
     def _open_specific_file(self, path):
         path = os.path.abspath(path)
@@ -902,6 +1047,7 @@ class EmexWindow(QMainWindow):
         idx = self.tabs.addTab(editor, title)
         self.tabs.setCurrentIndex(idx)
         self._update_status_pos()
+        self._update_project_explorer_context()
         self._do_render_preview()
 
     def _close_tab(self, index):
@@ -928,6 +1074,9 @@ class EmexWindow(QMainWindow):
         if index < 0:
             return
         self._update_status_pos()
+        self._update_project_explorer_context()
+        if hasattr(self, "github_panel") and self.left_panel.currentWidget() is self.github_panel:
+            self.github_panel.refresh_context(load_remote=False)
         self._do_render_preview()
 
     def _next_tab(self):
@@ -986,6 +1135,7 @@ class EmexWindow(QMainWindow):
         if not self._save_current():
             return False
         self._update_tab_title(self.tabs.currentIndex())
+        self._update_project_explorer_context()
         return True
 
     def _update_tab_title(self, index):
@@ -1132,20 +1282,146 @@ class EmexWindow(QMainWindow):
             return
         path, _ = QFileDialog.getSaveFileName(
             self, t("Xuất PDF"),
-            (editor.file_path or "tai-lieu").rsplit(".", 1)[0] + ".pdf",
+            self._suggest_pdf_path(editor),
             "PDF (*.pdf)")
         if not path:
             return
+        self._render_current_preview_to_pdf(path)
 
+    def _copy_pdf_to_clipboard(self):
+        editor = self._cur_editor()
+        if not editor:
+            return
+        path = self._clipboard_pdf_path(editor)
+
+        def on_success(file_path):
+            self._remember_export(file_path)
+            if self._copy_file_to_clipboard(file_path):
+                name = os.path.basename(file_path)
+                self.status_msg.setText(t("Đã sao chép PDF vào clipboard: {name}", name=name))
+                self._toast(t("Đã sao chép PDF vào clipboard: {name}", name=name),
+                            kind="success", duration_ms=4500)
+            else:
+                self.status_msg.setText("❌ " + t("Không sao chép được PDF vào clipboard."))
+                self._toast(t("Không sao chép được PDF vào clipboard."),
+                            kind="error", duration_ms=6000)
+
+        self._render_current_preview_to_pdf(
+            path,
+            on_success=on_success,
+            busy_message=t("Đang chuẩn bị PDF để sao chép..."),
+            busy_toast=t("Đang sao chép PDF…"),
+        )
+
+    def _copy_png_to_clipboard(self):
+        editor = self._cur_editor()
+        if not editor:
+            return
+        png_path, pdf_path = self._clipboard_png_paths(editor)
+
+        def on_pdf_ready(file_path):
+            try:
+                converted = self._pdf_to_single_png(file_path, png_path)
+            except Exception:
+                converted = False
+            if converted and self._copy_file_to_clipboard(png_path):
+                self._remember_export(png_path)
+                name = os.path.basename(png_path)
+                self.status_msg.setText(t("Đã sao chép PNG vào clipboard: {name}", name=name))
+                self._toast(t("Đã sao chép PNG vào clipboard: {name}", name=name),
+                            kind="success", duration_ms=4500)
+            else:
+                self.status_msg.setText("❌ " + t("Không sao chép được PNG vào clipboard."))
+                self._toast(t("Không sao chép được PNG vào clipboard."),
+                            kind="error", duration_ms=6000)
+
+        self._render_current_preview_to_pdf(
+            pdf_path,
+            on_success=on_pdf_ready,
+            busy_message=t("Đang chuẩn bị PNG để sao chép..."),
+            busy_toast=t("Đang sao chép PNG…"),
+        )
+
+    @staticmethod
+    def _pdf_to_single_png(pdf_path, png_path):
+        """Render all PDF pages and stack them vertically in one PNG."""
+        from PyQt6.QtPdf import QPdfDocument
+
+        document = QPdfDocument(None)
+        if document.load(pdf_path) != QPdfDocument.Error.None_:
+            return False
+        page_count = document.pageCount()
+        if page_count < 1:
+            document.close()
+            return False
+
+        scale = 2.0  # 144 DPI for PDF points (72 DPI).
+        page_sizes = []
+        for page in range(page_count):
+            points = document.pagePointSize(page)
+            page_sizes.append(QSize(max(1, round(points.width() * scale)),
+                                    max(1, round(points.height() * scale))))
+        canvas = QImage(max(size.width() for size in page_sizes),
+                        sum(size.height() for size in page_sizes),
+                        QImage.Format.Format_RGB32)
+        if canvas.isNull():
+            document.close()
+            return False
+        canvas.fill(Qt.GlobalColor.white)
+        painter = QPainter(canvas)
+        y = 0
+        for page, size in enumerate(page_sizes):
+            painter.drawImage(0, y, document.render(page, size))
+            y += size.height()
+        painter.end()
+        document.close()
+        del document
+        saved = canvas.save(png_path, "PNG")
+        try:
+            os.remove(pdf_path)
+        except OSError:
+            pass
+        return saved
+
+    def _quick_open_pdf(self):
+        editor = self._cur_editor()
+        if not editor:
+            return
+        path = self._quick_open_pdf_path(editor)
+
+        def on_success(file_path):
+            self._remember_export(file_path)
+            if QDesktopServices.openUrl(QUrl.fromLocalFile(file_path)):
+                name = os.path.basename(file_path)
+                self.status_msg.setText(t("Đã mở PDF: {name}", name=name))
+                self._toast(t("Đã mở PDF bằng trình đọc mặc định: {name}", name=name),
+                            kind="success", duration_ms=3500)
+            else:
+                self.status_msg.setText("❌ " + t("Không mở được PDF bằng trình đọc mặc định."))
+                self._toast(t("Không mở được PDF bằng trình đọc mặc định."),
+                            kind="error", duration_ms=6000)
+
+        self._render_current_preview_to_pdf(
+            path,
+            on_success=on_success,
+            busy_message=t("Đang chuẩn bị PDF để mở..."),
+            busy_toast=t("Đang mở nhanh PDF…"),
+        )
+
+    def _render_current_preview_to_pdf(self, path, *, on_success=None,
+                                       busy_message=None, busy_toast=None):
+        editor = self._cur_editor()
+        if not editor:
+            return
         if not self.preview.isVisible():
             self.act_toggle_preview.setChecked(True)
         self.preview.render(editor.toPlainText(),
                             base_url=os.path.dirname(editor.file_path) if editor.file_path else "")
 
-        self.status_msg.setText("⌛ " + t("Đang chờ MathJax/TikZ kết xuất rồi in PDF..."))
-        toast = self._toast(t("Đang chuẩn bị PDF…"), kind="info", duration_ms=0)
+        self.status_msg.setText("⌛ " + (busy_message or t("Đang chờ MathJax/TikZ kết xuất rồi in PDF...")))
+        toast = self._toast(busy_toast or t("Đang chuẩn bị PDF…"), kind="info", duration_ms=0)
 
-        deadline_ms = 12000
+        deadline_ms = 50000
         poll_ms = 120
         elapsed = {"t": 0}
 
@@ -1162,7 +1438,7 @@ class EmexWindow(QMainWindow):
                 elif state == "done":
                     if toast is not None:
                         toast.dismiss()
-                    self._print_pdf_now(path)
+                    self._print_pdf_now(path, on_success=on_success)
                 elif elapsed["t"] >= deadline_ms:
                     if toast is not None:
                         toast.dismiss()
@@ -1178,18 +1454,83 @@ class EmexWindow(QMainWindow):
             except Exception:
                 # Nếu Qt không cho callback (rất hiếm), fallback fixed delay
                 QTimer.singleShot(max(0, 1600 - elapsed["t"]),
-                                   lambda: self._print_pdf_now(path))
+                                   lambda: self._print_pdf_now(path, on_success=on_success))
 
         QTimer.singleShot(poll_ms, poll)
 
-    def _print_pdf_now(self, path):
+    def _print_pdf_now(self, path, *, on_success=None):
         page = self.preview.web.page()
+        handler_ref = {}
+
+        def handler(file_path, success):
+            try:
+                page.pdfPrintingFinished.disconnect(handler_ref["handler"])
+            except Exception:
+                pass
+            if success and on_success is not None:
+                on_success(file_path)
+            else:
+                self._on_pdf_done(file_path, success)
+
+        handler_ref["handler"] = handler
         try:
-            page.pdfPrintingFinished.disconnect(self._on_pdf_done)
+            page.pdfPrintingFinished.disconnect()
         except Exception:
             pass
-        page.pdfPrintingFinished.connect(self._on_pdf_done)
+        page.pdfPrintingFinished.connect(handler)
         page.printToPdf(path)
+
+    @staticmethod
+    def _safe_pdf_stem(value):
+        value = os.path.splitext(os.path.basename(value or ""))[0].strip()
+        value = value.lstrip("●").strip()
+        if not value:
+            value = "tai-lieu"
+        cleaned = "".join("-" if ch in '<>:"/\\|?*' else ch for ch in value).strip(" .")
+        return cleaned or "tai-lieu"
+
+    def _suggest_pdf_path(self, editor):
+        date_part = datetime.now().strftime("%Y%m%d")
+        stem = self._safe_pdf_stem(getattr(editor, "file_path", "") or self.tabs.tabText(self.tabs.currentIndex()))
+        folder = os.path.dirname(editor.file_path) if getattr(editor, "file_path", "") else ""
+        if not folder:
+            folder = os.path.expanduser("~")
+        return os.path.join(folder, f"{stem}_{date_part}.pdf")
+
+    def _clipboard_pdf_path(self, editor):
+        folder = os.path.join(CONFIG_DIR, "pdf_clipboard")
+        os.makedirs(folder, exist_ok=True)
+        date_part = datetime.now().strftime("%Y%m%d")
+        stem = self._safe_pdf_stem(getattr(editor, "file_path", "") or self.tabs.tabText(self.tabs.currentIndex()))
+        return os.path.join(folder, f"{stem}_{date_part}.pdf")
+
+    def _clipboard_png_paths(self, editor):
+        folder = os.path.join(CONFIG_DIR, "png_clipboard")
+        os.makedirs(folder, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        stem = self._safe_pdf_stem(
+            getattr(editor, "file_path", "") or self.tabs.tabText(self.tabs.currentIndex()))
+        base = os.path.join(folder, f"{stem}_{timestamp}")
+        return base + ".png", base + ".pdf"
+
+    def _quick_open_pdf_path(self, editor):
+        folder = os.path.join(CONFIG_DIR, "pdf_quick_open")
+        os.makedirs(folder, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        stem = self._safe_pdf_stem(
+            getattr(editor, "file_path", "") or self.tabs.tabText(self.tabs.currentIndex()))
+        return os.path.join(folder, f"{stem}_{timestamp}.pdf")
+
+    @staticmethod
+    def _copy_file_to_clipboard(path):
+        if not path or not os.path.exists(path):
+            return False
+        mime = QMimeData()
+        url = QUrl.fromLocalFile(os.path.abspath(path))
+        mime.setUrls([url])
+        mime.setText(os.path.abspath(path))
+        QApplication.clipboard().setMimeData(mime)
+        return True
 
     def _on_pdf_done(self, file_path, success):
         try:
@@ -1539,12 +1880,9 @@ class EmexWindow(QMainWindow):
 
         run_async(self, work, on_done=on_done, on_error=on_error)
 
-    def _on_compile_translation_tool_changed(self, _index):
+    def _on_compile_translation_changed(self):
         tool = normalize_translation_tool(self.preview.translation_tool())
         self.editor_config["compile_translate_tool"] = tool
-        save_editor_config(self.editor_config)
-
-    def _on_compile_translation_language_changed(self, _index):
         language = normalize_compile_language(self.preview.translation_language())
         self.editor_config["compile_translate_language"] = language
         save_editor_config(self.editor_config)
@@ -1762,7 +2100,9 @@ class EmexWindow(QMainWindow):
             self._hide_ai_panel()
 
     def trigger_ai_assistant(self):
-        if self.ai_chat_widget is not None and not self.ai_panel_host.isHidden():
+        if (self.ai_chat_widget is not None
+                and self.left_panel.isVisible()
+                and self.left_panel.currentWidget() is self.ai_panel_host):
             self._undock_ai_panel()
             return
         dlg = AIQuickDialog(self)
@@ -1770,17 +2110,7 @@ class EmexWindow(QMainWindow):
             self._show_ai_panel(dlg.take_chat_widget())
 
     def _apply_ai_panel_sizes(self):
-        sizes = self.left_splitter.sizes()
-        palette = sizes[0] if len(sizes) > 0 and self.symbol_palette.isVisible() else 0
-        folder = sizes[1] if len(sizes) > 1 and self.folder_tree_host.isVisible() else 0
-        if self.symbol_palette.isVisible() and palette < 180:
-            palette = 420
-        if self.folder_tree_host.isVisible() and folder < 180:
-            folder = 260
-        self.left_splitter.setSizes([palette, folder, 240])
-        sizes = self.main_splitter.sizes()
-        if sizes and sizes[0] < 320:
-            self.main_splitter.setSizes([340, max(520, sizes[1]), sizes[2] if len(sizes) > 2 else 520])
+        self._ensure_left_panel_width(320)
 
     def _show_ai_panel(self, widget=None):
         if self.ai_chat_widget is not None and self.ai_chat_widget is not widget:
@@ -1790,7 +2120,9 @@ class EmexWindow(QMainWindow):
         if widget is None:
             widget = AIChatWidget(self, compact=True)
         widget.set_compact(True)
-        self.left_splitter.setVisible(True)
+        self.left_panel.setVisible(True)
+        self.left_panel.setCurrentWidget(self.ai_panel_host)
+        self.ai_placeholder.setVisible(False)
         try:
             widget.undock_requested.disconnect(self._undock_ai_panel)
         except Exception:
@@ -1802,8 +2134,7 @@ class EmexWindow(QMainWindow):
         widget.undock_requested.connect(self._undock_ai_panel)
         widget.closed_requested.connect(self._hide_ai_panel)
         self.ai_chat_widget = widget
-        self.ai_panel_layout.addWidget(widget)
-        self.ai_panel_host.setVisible(True)
+        self.ai_panel_layout.addWidget(widget, 1)
         self.ai_panel_host.setMinimumHeight(160)
         self.editor_config["ui_ai_state"] = "compact"
         self._set_ai_toggle_checked(True)
@@ -1811,7 +2142,6 @@ class EmexWindow(QMainWindow):
         widget.input_edit.setFocus()
 
     def _hide_ai_panel(self):
-        self.ai_panel_host.setVisible(False)
         self.editor_config["ui_ai_state"] = "closed"
         self._set_ai_toggle_checked(False)
         if self.ai_chat_widget is not None:
@@ -1820,6 +2150,7 @@ class EmexWindow(QMainWindow):
             self.ai_panel_layout.removeWidget(widget)
             widget.setParent(None)
             widget.deleteLater()
+        self.ai_placeholder.setVisible(True)
 
     def _undock_ai_panel(self):
         if self.ai_chat_widget is None:
@@ -1827,7 +2158,7 @@ class EmexWindow(QMainWindow):
         widget = self.ai_chat_widget
         self.ai_chat_widget = None
         self.ai_panel_layout.removeWidget(widget)
-        self.ai_panel_host.setVisible(False)
+        self.ai_placeholder.setVisible(True)
         self.editor_config["ui_ai_state"] = "closed"
         self._set_ai_toggle_checked(False)
         widget.setParent(None)
@@ -1868,20 +2199,25 @@ class EmexWindow(QMainWindow):
 
         palette_visible = self.editor_config.get("ui_palette_visible", True)
         preview_visible = self.editor_config.get("ui_preview_visible", True)
-        self.symbol_palette.setVisible(palette_visible)
+        preview_justify = self.editor_config.get("preview_justify_text", False)
+        self.left_panel.setVisible(palette_visible)
         self.preview.setVisible(preview_visible)
+        self.preview.set_justify_text(preview_justify)
         self.act_toggle_palette.blockSignals(True)
         self.act_toggle_palette.setChecked(palette_visible)
         self.act_toggle_palette.blockSignals(False)
         self.act_toggle_preview.blockSignals(True)
         self.act_toggle_preview.setChecked(preview_visible)
         self.act_toggle_preview.blockSignals(False)
+        self.act_preview_justify.blockSignals(True)
+        self.act_preview_justify.setChecked(preview_justify)
+        self.act_preview_justify.blockSignals(False)
 
         folder_path = self.editor_config.get("ui_folder_tree_path", "")
         if self.editor_config.get("ui_folder_tree_visible", False) and os.path.isdir(folder_path):
             self._show_folder_tree(folder_path)
         else:
-            self.folder_tree_host.setVisible(False)
+            self._update_project_explorer_context()
 
         if self.editor_config.get("ui_ai_state") == "compact" and self.ai_chat_widget is None:
             self._show_ai_panel()
@@ -1891,26 +2227,28 @@ class EmexWindow(QMainWindow):
         main_sizes = self.editor_config.get("ui_main_splitter_sizes", [])
         if self._valid_splitter_sizes(main_sizes, 3):
             self.main_splitter.setSizes(main_sizes)
-        left_sizes = self.editor_config.get("ui_left_splitter_sizes", [])
-        if self._valid_splitter_sizes(left_sizes, 3):
-            self.left_splitter.setSizes(left_sizes)
-        elif self._valid_splitter_sizes(left_sizes, 2):
-            self.left_splitter.setSizes([left_sizes[0], 0, left_sizes[1]])
+        panel_index = self.editor_config.get("ui_left_panel_index", 1)
+        if isinstance(panel_index, int) and 0 <= panel_index < self.left_panel.count():
+            self.left_panel.setCurrentIndex(panel_index)
 
         if self.editor_config.get("ui_zen_enabled", False):
             self.act_zen.setChecked(True)
 
     def _save_ui_state(self):
         self.editor_config["ui_preview_visible"] = self.preview.isVisible()
-        self.editor_config["ui_palette_visible"] = self.symbol_palette.isVisible()
-        self.editor_config["ui_folder_tree_visible"] = self.folder_tree_host.isVisible()
-        self.editor_config["ui_folder_tree_path"] = self.editor_config.get("ui_folder_tree_path", "")
+        self.editor_config["preview_justify_text"] = self.act_preview_justify.isChecked()
+        self.editor_config["ui_palette_visible"] = self.left_panel.isVisible()
+        self.editor_config["ui_folder_tree_visible"] = bool(self.project_explorer.root_path)
+        self.editor_config["ui_folder_tree_path"] = (
+            self.project_explorer.root_path
+            or self.editor_config.get("ui_folder_tree_path", "")
+        )
         self.editor_config["ui_ai_state"] = (
-            "compact" if self.ai_chat_widget is not None and not self.ai_panel_host.isHidden()
+            "compact" if self.ai_chat_widget is not None
             else "closed"
         )
         self.editor_config["ui_main_splitter_sizes"] = self.main_splitter.sizes()
-        self.editor_config["ui_left_splitter_sizes"] = self.left_splitter.sizes()
+        self.editor_config["ui_left_panel_index"] = self.left_panel.currentIndex()
         normal = self.normalGeometry()
         self.editor_config["ui_window_geometry"] = [
             normal.x(), normal.y(), normal.width(), normal.height()
@@ -1929,27 +2267,27 @@ class EmexWindow(QMainWindow):
             self._do_render_preview()
 
     def _toggle_palette(self, on):
-        self.symbol_palette.setVisible(on)
+        self.left_panel.setVisible(on)
         self.editor_config["ui_palette_visible"] = on
-        if self.ai_chat_widget is not None and self.ai_panel_host.isVisible():
-            self._apply_ai_panel_sizes()
-        elif self.folder_tree_host.isVisible():
-            self._apply_folder_tree_sizes()
+        if on:
+            self._ensure_left_panel_width(300)
+
+    def _toggle_preview_justify(self, on):
+        self.preview.set_justify_text(on)
+        self.editor_config["preview_justify_text"] = on
+        save_editor_config(self.editor_config)
 
     def _toggle_zen(self, on):
         if on:
             self.toolbar.setVisible(False)
-            self.symbol_palette.setVisible(False)
-            self.folder_tree_host.setVisible(False)
+            self.left_panel.setVisible(False)
             self.preview.setVisible(False)
             self.statusBar().setVisible(False)
             self.act_toggle_palette.setChecked(False)
             self.act_toggle_preview.setChecked(False)
         else:
             self.toolbar.setVisible(True)
-            self.symbol_palette.setVisible(True)
-            if self.editor_config.get("ui_folder_tree_visible", False):
-                self.folder_tree_host.setVisible(True)
+            self.left_panel.setVisible(True)
             self.preview.setVisible(True)
             self.statusBar().setVisible(True)
             self.act_toggle_palette.setChecked(True)
@@ -1977,7 +2315,13 @@ class EmexWindow(QMainWindow):
                 self.auto_save_timer.stop()
             # Cập nhật kích thước toolbar & bảng ký hiệu
             self._apply_toolbar_sizes()
+            self.project_explorer.apply_config(self.editor_config)
             self.symbol_palette.apply_config(self.editor_config)
+            preview_justify = self.editor_config.get("preview_justify_text", False)
+            self.preview.set_justify_text(preview_justify)
+            self.act_preview_justify.blockSignals(True)
+            self.act_preview_justify.setChecked(preview_justify)
+            self.act_preview_justify.blockSignals(False)
             self._retranslate_ui()
             self.status_msg.setText(t("Đã cập nhật cấu hình."))
 
@@ -2011,10 +2355,13 @@ class EmexWindow(QMainWindow):
         self.act_find.setText(t("Tìm (Ctrl+F)"))
         self.act_replace.setText(t("Thay (Ctrl+H)"))
         self.act_render.setText(t("Biên dịch xem trước (Ctrl+Enter)"))
+        self.act_github.setText(t("GitHub"))
         self.act_ai.setText(t("Trợ lý eMeX (Ctrl+G)"))
         self.act_toggle_ai.setText(t("Bật/Tắt nhanh Trợ lý eMeX"))
         self.act_toggle_preview.setText(t("Bật/Tắt xem trước (Ctrl+P)"))
-        self.act_toggle_palette.setText(t("Bật/Tắt bảng ký hiệu"))
+        self.act_toggle_palette.setText(t("Ẩn/hiện sidebar"))
+        self.act_preview_justify.setText(t("Canh đều văn bản 2 bên"))
+        self.act_preview_justify.setToolTip(t("Canh đều các đoạn văn trong khung xem trước"))
         self.act_zen.setText(t("Chế độ tập trung (F11)"))
         self.act_settings.setText(t("Cài đặt"))
         self.act_about.setText(t("Giới thiệu"))
@@ -2023,13 +2370,16 @@ class EmexWindow(QMainWindow):
         self.btn_new.setToolTip(t("Tạo trang Markdown mới từ trang trống hoặc mẫu"))
         self.btn_open.setToolTip(t("Mở tệp Markdown / thư mục / tệp gần đây"))
         self.btn_save.setToolTip(t("Lưu tệp Markdown hiện tại (Ctrl+S)"))
-        self.btn_insert.setToolTip(t("Chèn nội dung"))
-        self.btn_tools.setToolTip(t("Công cụ soạn thảo"))
-        self.btn_view.setToolTip(t("Tùy chọn hiển thị"))
-        if not self.editor_config.get("ui_folder_tree_path", ""):
-            self.folder_tree_label.setText(t("Cây thư mục"))
-        self.btn_close_folder_tree.setToolTip(t("Ẩn cây thư mục"))
+        self.btn_github.setToolTip(t("GitHub: đăng nhập và liên kết repo"))
+        for button in self.toolbar.findChildren(QToolButton):
+            action = button.defaultAction()
+            if action is not None:
+                button.setToolTip(action.text() or action.toolTip())
+        self.left_panel.setTabToolTip(0, t("Cây thư mục dự án"))
+        self.left_panel.setTabToolTip(1, t("Bật/Tắt bảng ký hiệu"))
+        self.left_panel.setTabToolTip(2, t("Trợ lý eMeX (Ctrl+G)"))
         self.preview.retranslate_ui()
+        self.project_explorer.retranslate_ui()
         self.symbol_palette.retranslate_ui()
         if self.ai_chat_widget is not None:
             self.ai_chat_widget.retranslate_ui()
@@ -2054,8 +2404,11 @@ class EmexWindow(QMainWindow):
         pad = self.editor_config.get("toolbar_btn_padding", 6)
         self._toolbar_pad = pad
         self.toolbar.setIconSize(QSize(icon_sz, icon_sz))
-        # Cập nhật padding cho tất cả QToolButton trên toolbar
+        button_size = max(28, icon_sz + pad * 2)
+        # Cập nhật kích thước cho tất cả QToolButton trên toolbar
         for child in self.toolbar.findChildren(QToolButton):
+            child.setIconSize(QSize(icon_sz, icon_sz))
+            child.setFixedSize(button_size, button_size)
             old_ss = child.styleSheet()
             if old_ss:
                 # Thay padding:Npx thành giá trị mới
@@ -2066,6 +2419,7 @@ class EmexWindow(QMainWindow):
                     old_ss
                 )
                 child.setStyleSheet(new_ss)
+        self.preview.apply_toolbar_sizes(icon_sz, pad)
 
     def _open_about(self):
         if getattr(self, "_update_available", False) and self._pending_release is not None:
@@ -2128,7 +2482,7 @@ class EmexWindow(QMainWindow):
         self._about_blink_timer.stop()
         self.act_about.setText(t("Giới thiệu"))
         self.act_about.setToolTip(t("Giới thiệu"))
-        self.act_about.setIcon(emoji_icon("ℹ"))
+        self.act_about.setIcon(toolbar_icon("info"))
 
     def _blink_about_update_icon(self):
         if not self._update_available:
@@ -2173,6 +2527,38 @@ class EmexWindow(QMainWindow):
         result = dlg.exec()
         if result == RESULT_SKIP:
             self._clear_update_notification()
+
+    # =====================================================================
+    # GitHub
+    # =====================================================================
+    def _current_project_folder(self):
+        folder = getattr(self, "project_explorer", None).root_path if hasattr(self, "project_explorer") else ""
+        if folder and os.path.isdir(folder):
+            return folder
+        folder = self.editor_config.get("ui_folder_tree_path", "")
+        if folder and os.path.isdir(folder):
+            return folder
+        editor = self._cur_editor()
+        if editor and getattr(editor, "file_path", ""):
+            return os.path.dirname(editor.file_path)
+        return ""
+
+    def _open_github_dialog(self):
+        self.left_panel.setVisible(True)
+        self.left_panel.setCurrentWidget(self.github_panel)
+        self.act_toggle_palette.setChecked(True)
+        self.github_panel.refresh_context(load_remote=False)
+        self._ensure_left_panel_width(320)
+
+    def _on_github_link_updated(self, project_path, repo):
+        if repo:
+            self.status_msg.setText(
+                t("Đã liên kết GitHub: {folder} -> {repo}", folder=project_path, repo=repo))
+            self._toast(t("Đã liên kết GitHub: {repo}", repo=repo), kind="success")
+        else:
+            self.status_msg.setText(t("Đã bỏ liên kết GitHub cho thư mục: {folder}", folder=project_path))
+        if hasattr(self, "github_panel"):
+            self.github_panel.refresh_context(load_remote=False)
 
     def _auto_save(self):
         """Auto-save không-blocking: snapshot nội dung trên main thread rồi

@@ -19,11 +19,20 @@ _FRAC_SHORTHAND_RE = re.compile(r"\\frac\s*([A-Za-z0-9])\s*([A-Za-z0-9])")
 _SQRT_SHORTHAND_RE = re.compile(r"\\sqrt\s*([A-Za-z0-9])")
 _SQRT_COMMA_SPACE_RE = re.compile(r"(\\sqrt\{[^{}]+\}),\s*([A-Za-z])")
 _ROW_SPACING_RE = re.compile(r",\s*(\[\d+(?:\.\d+)?(?:pt|em|ex|mm|cm|in|px)\])\s*$")
+_BROKEN_SIZED_PARENS_RE = re.compile(
+    r"(\\(?P<size>bigg?|Bigg?)l?[ \t]*)\$(?!\$)"
+    r"([^$\n]*?)(\\(?P=size)r?[ \t]*)\$(?!\$)"
+)
 
 
 def normalize_external_paste_text(text: str) -> str:
-    """Normalize plain text received from external paste operations."""
-    return normalize_markdown_for_compile(text)
+    """Preserve clipboard source; only adapt its line endings for the editor.
+
+    Paste also receives partial formulas, code, and ordinary parentheses. The
+    compile-time math heuristics cannot infer their context and must not rewrite
+    the user's document. Preview/export normalization runs on a separate copy.
+    """
+    return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def normalize_markdown_for_compile(source: str) -> str:
@@ -41,6 +50,7 @@ def normalize_markdown_for_compile(source: str) -> str:
     out: list[str] = []
     i = 0
     in_fence = False
+    display_close: str | None = None
 
     while i < len(lines):
         line = lines[i]
@@ -48,12 +58,31 @@ def normalize_markdown_for_compile(source: str) -> str:
 
         if _FENCE_RE.match(stripped):
             in_fence = not in_fence
+            display_close = None
             out.append(line)
             i += 1
             continue
 
         if in_fence:
             out.append(line)
+            i += 1
+            continue
+
+        # Display delimiters may share a line with the formula. Keep every
+        # line in that block out of the prose/parenthesized-math heuristic.
+        if display_close is not None:
+            normalized, display_close = _normalize_display_math_line(line, display_close)
+            out.append(normalized)
+            i += 1
+            continue
+
+        opener = next((token for token in ("$$", r"\[") if stripped.startswith(token)), None)
+        if opener is not None:
+            start = line.index(opener)
+            close = "$$" if opener == "$$" else r"\]"
+            normalized, display_close = _normalize_display_math_line(
+                line[start + len(opener):], close)
+            out.append(line[:start] + "$$" + normalized)
             i += 1
             continue
 
@@ -71,6 +100,22 @@ def normalize_markdown_for_compile(source: str) -> str:
         i += 1
 
     return "\n".join(out)
+
+
+def _normalize_display_math_line(line: str, close: str) -> tuple[str, str | None]:
+    # A damaged closing parenthesis can sit directly before the closing $$,
+    # producing $$$. Keep the first dollar in the math so it can be repaired.
+    pattern = re.escape(close) + (r"(?!\$)" if close == "$$" else "")
+    for match in re.finditer(pattern, line):
+        # A delimiter escaped with an odd number of backslashes is literal.
+        prefix = line[:match.start()]
+        slash_count = len(prefix) - len(prefix.rstrip("\\"))
+        if slash_count % 2:
+            continue
+        math = _normalize_math_line(prefix)
+        suffix = _normalize_text_line(line[match.end():])
+        return math + "$$" + suffix, None
+    return _normalize_math_line(line), close
 
 
 def _normalize_unicode_text(text: str) -> str:
@@ -197,6 +242,9 @@ def _looks_like_inline_math(content: str) -> bool:
 
 
 def _normalize_latex_math(text: str) -> str:
+    # Earlier paste normalization replaced sized parentheses with dollars in
+    # multiline display math. Recover only the matching pair it produced.
+    text = _BROKEN_SIZED_PARENS_RE.sub(r"\1(\3\4)", text)
     text = _FRAC_SHORTHAND_RE.sub(r"\\frac{\1}{\2}", text)
     text = _SQRT_SHORTHAND_RE.sub(r"\\sqrt{\1}", text)
     text = _SQRT_COMMA_SPACE_RE.sub(r"\1\\,\2", text)
