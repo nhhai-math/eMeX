@@ -181,7 +181,6 @@ def _drop_unused_qt_binaries(items):
         "Qt6Location",
         "Qt6SerialPort",
         "Qt6Sql",
-        "Qt6Svg",
     )
     out = []
     for entry in items:
